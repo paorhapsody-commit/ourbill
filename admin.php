@@ -158,6 +158,7 @@ function acct_btn($id, $status, $label, $cls, $icon, $confirm = '') {
                 <p class="text-xs text-slate-400 mt-0.5">ทุกคนล็อกอิน Google ได้ แต่ต้องได้รับอนุมัติจึงจะใช้งานแอปได้</p>
             </div>
 
+            <div class="js-more-list" data-show="20">
             <?php if (empty($accounts)): ?>
                 <p class="p-8 text-center text-slate-400 text-sm">ยังไม่มีใครล็อกอินเข้ามา</p>
             <?php else: foreach ($accounts as $a):
@@ -192,6 +193,7 @@ function acct_btn($id, $status, $label, $cls, $icon, $confirm = '') {
                     </div>
                 </div>
             <?php endforeach; endif; ?>
+            </div>
         </div>
 
         <form method="POST" class="space-y-6">

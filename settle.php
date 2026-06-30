@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'settl
 
 $friends = unified_balances($myMember);
 $members = array_values(selectable_members($me)); // me + friends (สำหรับฟอร์มกำหนดเอง)
-$history = sb_get('settlements?select=*,from:from_user(name),to:to_user(name)&order=created_at.desc&limit=15') ?: [];
+$history = sb_get('settlements?select=*,from:from_user(name),to:to_user(name)&order=created_at.desc&limit=100') ?: [];
 
 // คัดเฉพาะเพื่อนที่ยังมียอดสุทธิรวมค้าง (รวมทุกฟังก์ชัน)
 $pending = [];
@@ -159,7 +159,7 @@ layout_head('เคลียร์หนี้', 'settle.php');
 <h2 class="text-lg font-bold text-slate-700 flex items-center gap-2 mb-4">
     <i data-lucide="history" class="w-5 h-5 text-emerald-500"></i> ประวัติการโอนคืน
 </h2>
-<div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+<div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden js-more-list" data-show="10">
     <?php if (empty($history)): ?>
         <p class="p-8 text-center text-slate-400">ยังไม่มีประวัติการเคลียร์หนี้</p>
     <?php else: foreach ($history as $h): ?>

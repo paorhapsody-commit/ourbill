@@ -111,6 +111,27 @@ function layout_foot() {
         OurBill · ระบบหารเงินกลุ่มเพื่อน · ทำด้วย PHP + Supabase
     </footer>
     <script>lucide.createIcons();</script>
+    <script>
+    // "ดูเพิ่ม" — ซ่อนรายการเกิน data-show แล้วมีปุ่มเผยทีละชุด (ใช้กับ .js-more-list)
+    document.querySelectorAll('.js-more-list').forEach(function (box) {
+        var step = parseInt(box.dataset.show) || 10;
+        var items = Array.prototype.filter.call(box.children, function (c) { return c.nodeType === 1; });
+        if (items.length <= step) return;
+        var shown = step;
+        function apply() { items.forEach(function (el, i) { el.style.display = i < shown ? '' : 'none'; }); }
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'js-more-btn w-full mt-2 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 text-sm font-semibold transition';
+        function label() { btn.textContent = 'ดูเพิ่ม (' + (items.length - shown) + ')'; }
+        btn.addEventListener('click', function () {
+            shown = Math.min(items.length, shown + step);
+            apply();
+            if (shown >= items.length) btn.remove(); else label();
+        });
+        apply(); label();
+        box.parentNode.insertBefore(btn, box.nextSibling);
+    });
+    </script>
 </body>
 </html>
 <?php

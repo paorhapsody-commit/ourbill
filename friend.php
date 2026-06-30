@@ -118,7 +118,7 @@ layout_head($friendName, 'friends.php');
         ยังไม่มีธุรกรรมกับเพื่อนคนนี้
     </div>
 <?php else: ?>
-    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden js-more-list" data-show="15">
         <?php foreach ($timeline as $t):
             $imp = round((float) $t['impact'], 2);
             $pos = $imp >= 0; ?>

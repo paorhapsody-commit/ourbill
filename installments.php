@@ -261,8 +261,8 @@ layout_head('ผ่อนรายเดือน', 'holdings.php');
 
         <!-- ประวัติการจ่าย -->
         <?php if ($pays): ?>
-        <div class="mt-3 space-y-1">
-            <?php foreach (array_slice($pays, 0, 4) as $pm): ?>
+        <div class="mt-3 space-y-1 js-more-list" data-show="4">
+            <?php foreach ($pays as $pm): ?>
                 <div class="flex items-center gap-2 text-xs text-slate-500">
                     <i data-lucide="<?= $pm['source'] === 'prepaid' ? 'wallet' : 'banknote' ?>" class="w-3.5 h-3.5 text-emerald-500"></i>
                     <span><?= date('d/m/y', strtotime($pm['paid_at'])) ?></span>

@@ -174,10 +174,10 @@ $shownMine = array_filter($frHold, fn($v) => abs($v['net']) > 0.009);
 
 <!-- ประวัติ -->
 <h2 class="text-sm font-bold text-slate-500 mb-2 px-1 flex items-center gap-1.5"><i data-lucide="history" class="w-4 h-4"></i> ประวัติล่าสุด</h2>
-<div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+<div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden js-more-list" data-show="10">
     <?php if (empty($rows)): ?>
         <p class="p-8 text-center text-slate-400 text-sm">ยังไม่มีประวัติ</p>
-    <?php else: foreach (array_slice($rows, 0, 15) as $h):
+    <?php else: foreach ($rows as $h):
         $amt = (float) $h['amount'];
         $iAmHolder = (int) $h['holder_id'] === $myMember; ?>
         <div class="flex items-center gap-3 p-4 border-b border-slate-50 last:border-0">

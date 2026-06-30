@@ -6,7 +6,7 @@ require_once '_layout.php';
 
 $myMember = (int) ($_SESSION['user']['member_id'] ?? 0);
 $friends  = unified_balances($myMember);   // ยอดสุทธิรวมทุกฟังก์ชัน ต่อเพื่อน
-$ledger   = sb_get('expenses?select=*,users(name)&order=created_at.desc&limit=8') ?: [];
+$ledger   = sb_get('expenses?select=*,users(name)&order=created_at.desc&limit=50') ?: [];
 $dueAlerts = installments_due_alerts($myMember);  // ผ่อนที่ถึงกำหนดงวดแล้ว
 
 // รายการสำหรับปฏิทิน จัดกลุ่มตามวัน
@@ -233,7 +233,7 @@ layout_head('หน้าหลัก', 'index.php');
     </h2>
 </div>
 
-<div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+<div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden js-more-list" data-show="8">
     <?php if (empty($ledger)): ?>
         <p class="p-8 text-center text-slate-400">ยังไม่มีการบันทึกค่าใช้จ่าย</p>
     <?php else: foreach ($ledger as $item): ?>
