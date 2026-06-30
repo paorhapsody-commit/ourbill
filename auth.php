@@ -184,6 +184,75 @@ function selectable_members($accountId) {
 }
 
 /**
+ * จำนวนงวดที่ "ครบกำหนดแล้ว" ณ วันนี้ — ยึดวันเดียวกันของทุกเดือนจาก start_date
+ * งวดแรกครบกำหนด ณ วันเริ่ม, งวดถัดไปทุกๆ 1 เดือน (วันเดียวกัน) จนครบ $months
+ * ไม่มี start_date = คิดเต็มทุกงวด (เข้ากันได้กับข้อมูลเก่า)
+ */
+function installments_due_count($startDate, $months) {
+    $months = (int) $months;
+    if ($months <= 0) return 0;
+    if (empty($startDate)) return $months;
+    $start = date_create(substr($startDate, 0, 10));
+    if (!$start) return $months;
+    $now = date_create('today');
+    if ($now < $start) return 0;
+    $d = date_diff($start, $now);
+    $elapsed = $d->y * 12 + $d->m;     // เดือนเต็มที่ผ่านมา (นับเมื่อถึงวันเดียวกันของเดือน)
+    return min($elapsed + 1, $months); // +1 = งวดแรก ณ วันเริ่ม
+}
+
+/**
+ * ยอดผ่อนที่ "ถึงกำหนดแล้วและยังค้างจ่าย" ต่อแผน ณ วันนี้
+ * @return float = (งวดที่ครบกำหนด × ยอดต่อเดือน) − ที่จ่ายแล้ว (ไม่ติดลบ)
+ */
+function installment_due_outstanding($plan, $paid) {
+    $due = installments_due_count($plan['start_date'] ?? null, (int) $plan['months']);
+    return max(0, round($due * (float) $plan['monthly_amount'] - (float) $paid, 2));
+}
+
+/**
+ * รายการผ่อนที่ "ถึงกำหนดงวดแล้วแต่ยังจ่ายไม่ครบ" — สำหรับแจ้งเตือนหน้าแรก
+ * คืน list: [id, title, friend_id, friend_name, outstanding, due, months, friend_pays, due_date]
+ */
+function installments_due_alerts($myMember) {
+    $me = (int) $myMember;
+    if ($me <= 0) return [];
+    $plans = sb_rows(sb_get('installments?or=(payee_id.eq.' . $me . ',payer_id.eq.' . $me
+        . ')&select=id,title,monthly_amount,months,payer_id,payee_id,start_date,created_at'));
+    if (!$plans) return [];
+    $ids  = implode(',', array_map(fn($p) => (int) $p['id'], $plans));
+    $paid = [];
+    foreach (sb_rows(sb_get('installment_payments?installment_id=in.(' . $ids . ')&select=installment_id,amount')) as $pm) {
+        $paid[(int) $pm['installment_id']] = ($paid[(int) $pm['installment_id']] ?? 0) + (float) $pm['amount'];
+    }
+    $out = [];
+    foreach ($plans as $p) {
+        $outstanding = installment_due_outstanding($p, $paid[(int) $p['id']] ?? 0);
+        if ($outstanding < 0.009) continue;
+        $due   = installments_due_count($p['start_date'] ?? null, (int) $p['months']);
+        $payee = (int) $p['payee_id']; $payer = (int) $p['payer_id'];
+        $friendId = $payee === $me ? $payer : $payee;
+        if ($friendId === $me) continue;
+        $base = !empty($p['start_date']) ? substr($p['start_date'], 0, 10) : substr($p['created_at'] ?? '', 0, 10);
+        $out[] = [
+            'id' => (int) $p['id'], 'title' => $p['title'], 'friend_id' => $friendId,
+            'outstanding' => $outstanding, 'due' => $due, 'months' => (int) $p['months'],
+            'friend_pays' => $payee === $me,   // true = เพื่อนผ่อนให้เรา (เรารอรับ)
+            'due_date' => $base && $due > 0 ? date('Y-m-d', strtotime('+' . ($due - 1) . ' months', strtotime($base))) : null,
+        ];
+    }
+    if (empty($out)) return [];
+    // ชื่อเพื่อน
+    $fids = array_values(array_unique(array_map(fn($r) => $r['friend_id'], $out)));
+    $names = [];
+    foreach (sb_rows(sb_get('users?id=in.(' . implode(',', $fids) . ')&select=id,name')) as $u) {
+        $names[(int) $u['id']] = $u['name'];
+    }
+    foreach ($out as &$r) { $r['friend_name'] = $names[$r['friend_id']] ?? ('#' . $r['friend_id']); }
+    return $out;
+}
+
+/**
  * ยอดสุทธิรวมทุกฟังก์ชัน ระหว่างเรากับเพื่อนแต่ละคน (จากมุมของ $myMember)
  * รวม: หารบิล + เคลียร์หนี้ + เงินเพื่อนที่ถือไว้ + ผ่อนรายเดือน
  * คืน array: fid => [id, name, bill, settle, holding, installment, net]
@@ -226,8 +295,8 @@ function unified_balances($myMember) {
         if ($hd === $myMember && $ow !== $myMember) { $f = $touch($net, $ow); $net[$f]['holding'] -= $amt; } // เราถือเงินเพื่อน -> เราติดเพื่อน
         if ($ow === $myMember && $hd !== $myMember) { $f = $touch($net, $hd); $net[$f]['holding'] += $amt; } // เพื่อนถือเงินเรา -> เพื่อนติดเรา
     }
-    // ผ่อนรายเดือน (installments) -> ยอดคงเหลือ
-    $plans = sb_rows(sb_get('installments?or=(payee_id.eq.' . $myMember . ',payer_id.eq.' . $myMember . ')&select=id,payer_id,payee_id,monthly_amount,months'));
+    // ผ่อนรายเดือน (installments) -> นับเฉพาะงวดที่ "ถึงกำหนดแล้ว" ตาม start_date
+    $plans = sb_rows(sb_get('installments?or=(payee_id.eq.' . $myMember . ',payer_id.eq.' . $myMember . ')&select=id,payer_id,payee_id,monthly_amount,months,start_date'));
     if ($plans) {
         $ids  = implode(',', array_map(fn($p) => (int) $p['id'], $plans));
         $paid = [];
@@ -235,7 +304,7 @@ function unified_balances($myMember) {
             $paid[(int) $pm['installment_id']] = ($paid[(int) $pm['installment_id']] ?? 0) + (float) $pm['amount'];
         }
         foreach ($plans as $p) {
-            $remain = max(0, (float) $p['monthly_amount'] * (int) $p['months'] - ($paid[(int) $p['id']] ?? 0));
+            $remain = installment_due_outstanding($p, $paid[(int) $p['id']] ?? 0); // เฉพาะงวดที่ครบกำหนด
             $payer = (int) $p['payer_id']; $payee = (int) $p['payee_id'];
             if ($payee === $myMember && $payer !== $myMember) { $f = $touch($net, $payer); $net[$f]['installment'] += $remain; } // เพื่อนผ่อนให้เรา
             if ($payer === $myMember && $payee !== $myMember) { $f = $touch($net, $payee); $net[$f]['installment'] -= $remain; } // เราผ่อนให้เพื่อน
@@ -301,17 +370,23 @@ function friend_timeline($myMember, $friendId) {
                        : ($amt >= 0 ? 'เพื่อนถือเงินเรา' : 'เพื่อนคืนเงินเรา');
         $ev[] = ['ts' => $h['created_at'] ?? '', 'icon' => 'piggy-bank', 'title' => 'เงินที่ถือไว้', 'sub' => $sub, 'impact' => $impact];
     }
-    // (5) ผ่อนรายเดือน: เริ่มแผน + การจ่ายแต่ละงวด
-    $plans = sb_rows(sb_get('installments?select=id,title,monthly_amount,months,payer_id,payee_id,created_at'
+    // (5) ผ่อนรายเดือน: ครบกำหนดทีละงวด (ตาม start_date) + การจ่ายแต่ละงวด
+    $plans = sb_rows(sb_get('installments?select=id,title,monthly_amount,months,payer_id,payee_id,start_date,created_at'
             . '&or=(and(payee_id.eq.' . $me . ',payer_id.eq.' . $fr . '),and(payer_id.eq.' . $me . ',payee_id.eq.' . $fr . '))'));
     if ($plans) {
         $titleOf = [];
         foreach ($plans as $p) {
             $titleOf[(int) $p['id']] = $p['title'];
             $friendPays = (int) $p['payee_id'] === $me;            // เพื่อนผ่อนให้เรา
-            $total = (float) $p['monthly_amount'] * (int) $p['months'];
-            $ev[] = ['ts' => $p['created_at'] ?? '', 'icon' => 'calendar-clock', 'title' => 'เริ่มแผนผ่อน: ' . $p['title'],
-                     'sub' => $friendPays ? 'เพื่อนจะผ่อนให้เรา' : 'เราจะผ่อนให้เพื่อน', 'impact' => $friendPays ? $total : -$total];
+            $monthly = (float) $p['monthly_amount'];
+            // อีเวนต์ "ถึงกำหนด" ทีละงวด เฉพาะงวดที่ครบกำหนดแล้ว ณ วันนี้
+            $due   = installments_due_count($p['start_date'] ?? null, (int) $p['months']);
+            $base  = !empty($p['start_date']) ? substr($p['start_date'], 0, 10) : substr($p['created_at'] ?? '', 0, 10);
+            for ($n = 0; $n < $due; $n++) {
+                $ts = $base ? date('Y-m-d', strtotime("+$n months", strtotime($base))) : ($p['created_at'] ?? '');
+                $ev[] = ['ts' => $ts, 'icon' => 'calendar-clock', 'title' => 'ผ่อนงวดที่ ' . ($n + 1) . '/' . (int) $p['months'] . ': ' . $p['title'],
+                         'sub' => $friendPays ? 'ถึงกำหนดเพื่อนผ่อน' : 'ถึงกำหนดเราผ่อน', 'impact' => $friendPays ? $monthly : -$monthly];
+            }
         }
         $ids = implode(',', array_map(fn($p) => (int) $p['id'], $plans));
         $payeeOf = [];
@@ -359,7 +434,7 @@ function settle_net_with_friend($myMember, $friendId) {
 
     // (2) ผ่อนรายเดือน -> จ่ายงวดที่เหลือของทุกแผนระหว่างกันให้ครบ
     if (abs($instB) > 0.009) {
-        $plans = sb_rows(sb_get('installments?select=id,monthly_amount,months'
+        $plans = sb_rows(sb_get('installments?select=id,monthly_amount,months,start_date'
             . '&or=(and(payee_id.eq.' . $me . ',payer_id.eq.' . $fr . '),and(payer_id.eq.' . $me . ',payee_id.eq.' . $fr . '))'));
         if ($plans) {
             $ids  = implode(',', array_map(fn($p) => (int) $p['id'], $plans));
@@ -368,7 +443,7 @@ function settle_net_with_friend($myMember, $friendId) {
                 $paid[(int) $pm['installment_id']] = ($paid[(int) $pm['installment_id']] ?? 0) + (float) $pm['amount'];
             }
             foreach ($plans as $p) {
-                $remain = round(max(0, (float) $p['monthly_amount'] * (int) $p['months'] - ($paid[(int) $p['id']] ?? 0)), 2);
+                $remain = installment_due_outstanding($p, $paid[(int) $p['id']] ?? 0); // เฉพาะงวดที่ครบกำหนด
                 if ($remain > 0.009) {
                     sb_insert('installment_payments', ['installment_id' => (int) $p['id'], 'amount' => $remain, 'source' => 'cash', 'note' => $note]);
                 }

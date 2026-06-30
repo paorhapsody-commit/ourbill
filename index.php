@@ -7,6 +7,7 @@ require_once '_layout.php';
 $myMember = (int) ($_SESSION['user']['member_id'] ?? 0);
 $friends  = unified_balances($myMember);   // ยอดสุทธิรวมทุกฟังก์ชัน ต่อเพื่อน
 $ledger   = sb_get('expenses?select=*,users(name)&order=created_at.desc&limit=8') ?: [];
+$dueAlerts = installments_due_alerts($myMember);  // ผ่อนที่ถึงกำหนดงวดแล้ว
 
 // สรุปจากมุมของเรา
 $owedToMe = 0; $iOwe = 0; $installRecv = 0; $held = 0;
@@ -23,6 +24,33 @@ if ($myMember) {
 
 layout_head('หน้าหลัก', 'index.php');
 ?>
+
+<?php if (!empty($dueAlerts)): ?>
+<!-- แจ้งเตือนผ่อนที่ถึงกำหนดงวด -->
+<div class="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-6">
+    <p class="font-bold text-amber-800 text-sm flex items-center gap-2 mb-2.5">
+        <i data-lucide="bell-ring" class="w-4 h-4"></i> ผ่อนถึงกำหนดงวดแล้ว (<?= count($dueAlerts) ?>)
+    </p>
+    <div class="space-y-2">
+        <?php foreach ($dueAlerts as $a): ?>
+            <a href="friend.php?id=<?= $a['friend_id'] ?>" class="flex items-center gap-3 bg-white rounded-xl p-3 border border-amber-100 hover:border-amber-300 transition">
+                <span class="grid place-items-center w-9 h-9 rounded-xl bg-amber-100 text-amber-600 shrink-0">
+                    <i data-lucide="calendar-clock" class="w-4 h-4"></i>
+                </span>
+                <div class="min-w-0 flex-1">
+                    <p class="text-sm font-semibold text-slate-700 truncate"><?= htmlspecialchars($a['title']) ?></p>
+                    <p class="text-xs text-slate-400">
+                        <?= $a['friend_pays'] ? 'รอรับจาก' : 'ต้องจ่ายให้' ?> <?= htmlspecialchars($a['friend_name']) ?>
+                        · ครบกำหนด <?= $a['due'] ?>/<?= $a['months'] ?> งวด
+                        <?php if (!empty($a['due_date'])): ?> · งวดล่าสุด <?= date('d/m/y', strtotime($a['due_date'])) ?><?php endif; ?>
+                    </p>
+                </div>
+                <span class="font-bold text-sm shrink-0 <?= $a['friend_pays'] ? 'text-emerald-600' : 'text-rose-500' ?>"><?= baht($a['outstanding']) ?> ฿</span>
+            </a>
+        <?php endforeach; ?>
+    </div>
+</div>
+<?php endif; ?>
 
 <!-- Summary stat cards (มุมของเรา) -->
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-7">
