@@ -84,25 +84,13 @@ layout_head($friendName, 'friends.php');
 </div>
 
 <?php if (abs($net) > 0.009): $friendOwesMe = $net > 0; ?>
-<form method="POST" action="settle.php" class="js-reconcile-form mb-3 bg-white rounded-2xl border border-slate-100 shadow-sm p-4"
-      data-name="<?= htmlspecialchars($friendName, ENT_QUOTES) ?>" data-net="<?= round($net, 2) ?>"
-      data-bill="<?= round($bal['bill'] + $bal['settle'], 2) ?>" data-hold="<?= round((float) $bal['holding'], 2) ?>" data-inst="<?= round((float) $bal['installment'], 2) ?>">
+<form method="POST" action="settle.php" class="js-reconcile-form mb-3"
+      data-name="<?= htmlspecialchars($friendName, ENT_QUOTES) ?>" data-net="<?= round($net, 2) ?>" data-fid="<?= $fid ?>">
     <input type="hidden" name="action" value="reconcile">
     <input type="hidden" name="friend_id" value="<?= $fid ?>">
-    <p class="text-xs text-slate-500 mb-2">
-        สรุป: <b class="<?= $friendOwesMe ? 'text-emerald-600' : 'text-rose-500' ?>"><?= $friendOwesMe ? 'เพื่อนติดเรา' : 'เราติดเพื่อน' ?> <?= baht(abs($net)) ?> ฿</b> · กรอกจำนวนที่<?= $friendOwesMe ? 'เพื่อนจ่ายคืน' : 'เราจ่ายคืน' ?> แล้วกดเคลียร์
-    </p>
-    <div class="flex items-end gap-2">
-        <div class="flex-1">
-            <label class="block text-[11px] font-semibold text-slate-500 mb-1">จำนวนที่จ่ายคืน (฿)</label>
-            <input type="number" name="amount" step="0.01" min="0" value="<?= number_format(abs($net), 2, '.', '') ?>"
-                   class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-400">
-        </div>
-        <button type="submit" class="bg-gradient-to-br from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white font-bold text-sm py-2.5 px-6 rounded-xl shadow-md shadow-emerald-200 transition flex items-center justify-center gap-2 whitespace-nowrap">
-            <i data-lucide="check-check" class="w-4 h-4"></i> เคลียร์
-        </button>
-    </div>
-    <p class="text-[11px] text-slate-400 mt-2">ส่วนต่าง (จ่ายเกิน/ขาด) จะถูกเก็บเป็นเงินเพื่อนให้อัตโนมัติ</p>
+    <button type="submit" class="w-full bg-gradient-to-br from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white font-bold text-sm py-3 rounded-xl shadow-md shadow-emerald-200 transition flex items-center justify-center gap-2">
+        <i data-lucide="check-check" class="w-4 h-4"></i> เคลียร์ยอด<?= $friendOwesMe ? ' (เพื่อนจ่ายคืน)' : ' (เราจ่ายคืน)' ?> <?= baht(abs($net)) ?> ฿
+    </button>
 </form>
 <?php endif; ?>
 
@@ -154,5 +142,5 @@ layout_head($friendName, 'friends.php');
 <?php endif; ?>
 
 <?php endif; // valid ?>
-<?php reconcile_modal(); ?>
+<?php reconcile_modal($validFriend && $myMember ? [$fid => $timeline] : []); ?>
 <?php layout_foot(); ?>

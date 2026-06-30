@@ -117,28 +117,36 @@ function layout_foot() {
 }
 
 /**
- * Modal ยืนยันการเคลียร์หนี้ — แสดง breakdown (ยอดนี้มาจากอะไร) + ส่วนต่าง
- * ใช้กับฟอร์มที่มี class "js-reconcile-form" + data-name/net/bill/hold/inst และ input[name=amount]
- * เรียกฟังก์ชันนี้ก่อน layout_foot()
+ * Modal ยืนยันการเคลียร์หนี้ — แสดงรายการรายวันที่ประกอบเป็นยอด + กรอกจำนวนใน modal + ส่วนต่าง
+ * ใช้กับฟอร์ม class "js-reconcile-form" + data-name/net/fid และ hidden input[name=amount]
+ * $itemsByFriend = [friendId => [ {ts,icon,title,sub,impact}, ... ]] (จาก friend_timeline)
+ * เรียกก่อน layout_foot()
  */
-function reconcile_modal() {
+function reconcile_modal($itemsByFriend = []) {
 ?>
-<div id="reconcileModal" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-    <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 animate-pop">
-        <div class="flex items-center gap-2 mb-3">
-            <span class="grid place-items-center w-9 h-9 rounded-xl bg-emerald-100 text-emerald-600"><i data-lucide="check-check" class="w-4 h-4"></i></span>
-            <h3 class="font-bold text-slate-800">เคลียร์กับ <span id="rcName"></span></h3>
+<script>window.RECONCILE_ITEMS = <?= json_encode($itemsByFriend ?: new stdClass, JSON_UNESCAPED_UNICODE) ?>;</script>
+<div id="reconcileModal" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-sm">
+    <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full max-w-md max-h-[92vh] flex flex-col">
+        <div class="p-5 pb-3 border-b border-slate-100 shrink-0">
+            <div class="flex items-center gap-2">
+                <span class="grid place-items-center w-9 h-9 rounded-xl bg-emerald-100 text-emerald-600"><i data-lucide="check-check" class="w-4 h-4"></i></span>
+                <h3 class="font-bold text-slate-800">เคลียร์กับ <span id="rcName"></span></h3>
+            </div>
+            <div class="text-sm mt-2" id="rcSummary"></div>
         </div>
-        <div class="text-sm mb-3" id="rcSummary"></div>
-        <div class="bg-slate-50 rounded-xl p-3 text-sm mb-3">
-            <p class="text-xs font-semibold text-slate-400 mb-1.5">ยอดนี้มาจาก</p>
-            <div id="rcBreakdown" class="space-y-1"></div>
+        <div class="px-5 py-3 overflow-y-auto flex-1">
+            <p class="text-xs font-semibold text-slate-400 mb-2">รายการที่ประกอบเป็นยอด (+ เพื่อนติดเรา / − เราติดเพื่อน)</p>
+            <div id="rcItems" class="space-y-1.5"></div>
         </div>
-        <div class="flex justify-between text-sm mb-1"><span class="text-slate-500">ลูกหนี้จ่ายคืน</span><span class="font-bold text-slate-700" id="rcPay"></span></div>
-        <div class="flex justify-between items-center text-sm mb-4 pt-2 border-t border-slate-100"><span class="text-slate-500">คงเหลือหลังเคลียร์</span><span id="rcResidual" class="text-right text-sm"></span></div>
-        <div class="flex gap-2">
-            <button id="rcCancel" type="button" class="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-600 font-semibold text-sm hover:bg-slate-200 transition">ยกเลิก</button>
-            <button id="rcConfirm" type="button" class="flex-1 py-2.5 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 text-white font-bold text-sm shadow-md shadow-emerald-200 transition">ยืนยันเคลียร์</button>
+        <div class="p-5 pt-3 border-t border-slate-100 shrink-0">
+            <label class="block text-xs font-semibold text-slate-500 mb-1">จำนวนที่ลูกหนี้จ่ายคืน (฿)</label>
+            <input id="rcAmount" type="number" step="0.01" min="0"
+                   class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-400 mb-2">
+            <div class="flex justify-between items-start text-sm mb-3"><span class="text-slate-500">คงเหลือหลังเคลียร์</span><span id="rcResidual" class="text-right"></span></div>
+            <div class="flex gap-2">
+                <button id="rcCancel" type="button" class="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-600 font-semibold text-sm hover:bg-slate-200 transition">ยกเลิก</button>
+                <button id="rcConfirm" type="button" class="flex-1 py-2.5 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 text-white font-bold text-sm shadow-md shadow-emerald-200 transition">ยืนยันเคลียร์</button>
+            </div>
         </div>
     </div>
 </div>
@@ -146,39 +154,42 @@ function reconcile_modal() {
 (function () {
     const modal = document.getElementById('reconcileModal');
     if (!modal) return;
+    document.body.appendChild(modal); // ย้ายออกจาก <main> (ที่มี transform) ให้ fixed เต็มจอ
+    const ITEMS = window.RECONCILE_ITEMS || {};
+    const ICON = { receipt:'receipt', 'arrow-right-left':'arrow-right-left', 'piggy-bank':'piggy-bank', banknote:'banknote', 'calendar-clock':'calendar-clock' };
     const $ = function (id) { return document.getElementById(id); };
-    let pending = null;
+    let pending = null, curNet = 0;
     function fmt(n){ return Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+    function dateTH(ts){ if(!ts) return ''; const p=String(ts).slice(0,10).split('-'); return p.length===3 ? (parseInt(p[2])+'/'+p[1]+'/'+p[0].slice(2)) : ''; }
 
-    function open(form) {
-        pending = form;
-        const net  = parseFloat(form.dataset.net)  || 0;
-        const bill = parseFloat(form.dataset.bill) || 0;
-        const hold = parseFloat(form.dataset.hold) || 0;
-        const inst = parseFloat(form.dataset.inst) || 0;
-        const pay  = parseFloat((form.querySelector('[name=amount]') || {}).value) || 0;
-        $('rcName').textContent = form.dataset.name || '';
-        $('rcSummary').innerHTML = net >= 0
-            ? '<span class="text-emerald-600 font-bold">เพื่อนติดเรา ' + fmt(net) + ' ฿</span>'
-            : '<span class="text-rose-500 font-bold">เราติดเพื่อน ' + fmt(-net) + ' ฿</span>';
-        const rows = [];
-        function row(label, val) {
-            if (Math.abs(val) < 0.009) return;
-            const pos = val >= 0;
-            rows.push('<div class="flex justify-between"><span class="text-slate-500">' + label + '</span><span class="' +
-                (pos ? 'text-emerald-600' : 'text-rose-500') + '">' + (pos ? '+' : '−') + fmt(Math.abs(val)) + ' ฿</span></div>');
-        }
-        row('บิล/รายจ่าย', bill);
-        row('ผ่อนที่ถึงกำหนด', inst);
-        row('เงินที่ถือไว้', hold);
-        $('rcBreakdown').innerHTML = rows.join('') || '<div class="text-slate-400">—</div>';
-        $('rcPay').textContent = fmt(pay) + ' ฿';
-        const residual = Math.round((net - (net >= 0 ? pay : -pay)) * 100) / 100;
+    function updateResidual(){
+        const pay = parseFloat($('rcAmount').value) || 0;
+        const residual = Math.round((curNet - (curNet >= 0 ? pay : -pay)) * 100) / 100;
         let r;
-        if (Math.abs(residual) < 0.009) r = '<span class="text-slate-500">เคลียร์หมด ✓</span>';
+        if (Math.abs(residual) < 0.009) r = '<span class="text-slate-500 font-semibold">เคลียร์หมด ✓</span>';
         else if (residual > 0) r = '<span class="text-emerald-600 font-semibold">เพื่อนยังติดเรา ' + fmt(residual) + ' ฿</span><br><span class="text-[11px] text-slate-400">→ เก็บไว้ที่เงินเพื่อน</span>';
         else r = '<span class="text-rose-500 font-semibold">เราติดเพื่อน ' + fmt(-residual) + ' ฿</span><br><span class="text-[11px] text-slate-400">→ เก็บไว้ที่เงินเพื่อน</span>';
         $('rcResidual').innerHTML = r;
+    }
+
+    function open(form) {
+        pending = form;
+        curNet = parseFloat(form.dataset.net) || 0;
+        $('rcName').textContent = form.dataset.name || '';
+        $('rcSummary').innerHTML = curNet >= 0
+            ? '<span class="text-emerald-600 font-bold">สรุป: เพื่อนติดเรา ' + fmt(curNet) + ' ฿</span>'
+            : '<span class="text-rose-500 font-bold">สรุป: เราติดเพื่อน ' + fmt(-curNet) + ' ฿</span>';
+        const items = ITEMS[form.dataset.fid] || [];
+        $('rcItems').innerHTML = items.length ? items.map(function (it) {
+            const pos = (it.impact || 0) >= 0;
+            return '<div class="flex items-center gap-2.5">'
+              + '<span class="grid place-items-center w-8 h-8 rounded-lg bg-slate-50 text-emerald-500 shrink-0"><i data-lucide="' + (ICON[it.icon] || 'circle') + '" class="w-4 h-4"></i></span>'
+              + '<div class="min-w-0 flex-1"><p class="text-sm text-slate-700 truncate">' + (it.title || '') + '</p>'
+              + '<p class="text-[11px] text-slate-400">' + (it.sub ? it.sub + ' · ' : '') + dateTH(it.ts) + '</p></div>'
+              + '<span class="text-sm font-semibold shrink-0 ' + (pos ? 'text-emerald-600' : 'text-rose-500') + '">' + (pos ? '+' : '−') + fmt(Math.abs(it.impact || 0)) + '</span></div>';
+        }).join('') : '<p class="text-slate-400 text-sm text-center py-2">— ไม่มีรายการย่อย —</p>';
+        $('rcAmount').value = fmt(Math.abs(curNet));
+        updateResidual();
         modal.classList.remove('hidden');
         if (window.lucide) lucide.createIcons();
     }
@@ -186,9 +197,16 @@ function reconcile_modal() {
     document.querySelectorAll('.js-reconcile-form').forEach(function (f) {
         f.addEventListener('submit', function (e) { e.preventDefault(); open(f); });
     });
+    $('rcAmount').addEventListener('input', updateResidual);
     $('rcCancel').addEventListener('click', function () { modal.classList.add('hidden'); });
     modal.addEventListener('click', function (e) { if (e.target === modal) modal.classList.add('hidden'); });
-    $('rcConfirm').addEventListener('click', function () { if (pending) pending.submit(); });
+    $('rcConfirm').addEventListener('click', function () {
+        if (!pending) return;
+        let h = pending.querySelector('input[name=amount]');
+        if (!h) { h = document.createElement('input'); h.type = 'hidden'; h.name = 'amount'; pending.appendChild(h); }
+        h.value = (parseFloat($('rcAmount').value) || 0).toFixed(2);
+        pending.submit();
+    });
 })();
 </script>
 <?php

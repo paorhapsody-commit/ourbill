@@ -39,6 +39,9 @@ $pending = [];
 foreach ($friends as $f) {
     if (abs((float) $f['net']) > 0.009) $pending[] = $f;
 }
+// รายการย่อยต่อเพื่อน สำหรับ modal เคลียร์
+$rcItems = [];
+foreach ($pending as $f) { $rcItems[$f['id']] = friend_timeline($myMember, (int) $f['id']); }
 
 layout_head('เคลียร์หนี้', 'settle.php');
 ?>
@@ -107,18 +110,12 @@ layout_head('เคลียร์หนี้', 'settle.php');
                         </div>
                     </div>
                 </a>
-                <form method="POST" class="js-reconcile-form sm:w-auto flex items-end gap-2"
-                      data-name="<?= htmlspecialchars($f['name'], ENT_QUOTES) ?>" data-net="<?= $net ?>"
-                      data-bill="<?= round($f['bill'] + $f['settle'], 2) ?>" data-hold="<?= round((float) $f['holding'], 2) ?>" data-inst="<?= round((float) $f['installment'], 2) ?>">
+                <form method="POST" class="js-reconcile-form sm:w-auto"
+                      data-name="<?= htmlspecialchars($f['name'], ENT_QUOTES) ?>" data-net="<?= $net ?>" data-fid="<?= $f['id'] ?>">
                     <input type="hidden" name="action" value="reconcile">
                     <input type="hidden" name="friend_id" value="<?= $f['id'] ?>">
-                    <div>
-                        <label class="block text-[11px] font-semibold text-slate-500 mb-1"><?= $friendOwesMe ? 'เพื่อนจ่ายคืน' : 'เราจ่ายคืน' ?> (฿)</label>
-                        <input type="number" name="amount" step="0.01" min="0" value="<?= number_format(abs($net), 2, '.', '') ?>"
-                               class="w-28 px-3 py-2 border border-slate-200 rounded-lg text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-400">
-                    </div>
                     <button type="submit"
-                            class="bg-gradient-to-br from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white font-semibold text-sm px-5 py-2 rounded-xl shadow-md shadow-emerald-200 transition flex items-center justify-center gap-2 whitespace-nowrap">
+                            class="w-full sm:w-auto bg-gradient-to-br from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white font-semibold text-sm px-5 py-2.5 rounded-xl shadow-md shadow-emerald-200 transition flex items-center justify-center gap-2 whitespace-nowrap">
                         <i data-lucide="check-check" class="w-4 h-4"></i> เคลียร์
                     </button>
                 </form>
@@ -183,5 +180,5 @@ layout_head('เคลียร์หนี้', 'settle.php');
     <?php endforeach; endif; ?>
 </div>
 
-<?php reconcile_modal(); ?>
+<?php reconcile_modal($rcItems); ?>
 <?php layout_foot(); ?>
