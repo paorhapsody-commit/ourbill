@@ -229,9 +229,13 @@ function acct_btn($id, $status, $label, $cls, $icon, $confirm = '') {
                 </div>
                 <div>
                     <label class="block text-sm font-semibold text-slate-600 mb-1.5">Redirect URI</label>
-                    <input type="text" name="google_redirect_uri" value="<?= htmlspecialchars($s['google_redirect_uri'] ?? '') ?>" placeholder="http://localhost/ourbill/callback.php"
+                    <input type="text" name="google_redirect_uri" value="<?= htmlspecialchars($s['google_redirect_uri'] ?? '') ?>" placeholder="<?= htmlspecialchars(current_callback_url()) ?>"
                            class="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400">
-                    <p class="text-xs text-slate-400 mt-1.5">ต้องตรงกับที่ตั้งใน Google Console เป๊ะ ๆ (ปล่อยว่างจะใช้ค่าใน auth_config.php)</p>
+                    <div class="mt-2 p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+                        <p class="text-slate-500 mb-1">URL ของระบบนี้ตอนนี้ (เอาไปใส่ใน Google Console → Authorized redirect URIs):</p>
+                        <code class="block bg-white border border-slate-200 rounded px-2 py-1 text-emerald-700 break-all"><?= htmlspecialchars(current_callback_url()) ?></code>
+                        <p class="text-slate-400 mt-1.5">ปล่อยช่องบนว่างไว้ก็ได้ — ระบบจะใช้ URL นี้อัตโนมัติ</p>
+                    </div>
                 </div>
             </div>
 

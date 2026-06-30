@@ -1,0 +1,13 @@
+# Render Blueprint — สร้าง web service อัตโนมัติจาก repo นี้
+# ใช้: Render Dashboard → New → Blueprint → เลือก repo นี้
+services:
+  - type: web
+    name: ourbill
+    runtime: docker
+    plan: free
+    envVars:
+      # ตั้งค่าจริงในหน้า Render Dashboard (ไม่เก็บค่าลับในไฟล์นี้)
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false

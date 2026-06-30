@@ -37,6 +37,19 @@
 
 > **ความลับไม่ขึ้น git:** `config.local.php` ถูก `.gitignore` ไว้ · ส่วน Google OAuth (Client ID/Secret) เก็บในฐานข้อมูล (ตั้งผ่านแผงแอดมิน) ไม่ได้อยู่ในไฟล์
 
+## Deploy ขึ้น Render (Docker)
+มี `Dockerfile` + `render.yaml` ให้แล้ว (PHP 8.2 + Apache)
+
+1. Render Dashboard → **New → Web Service** → เชื่อม GitHub repo นี้ (Render จะตรวจเจอ `Dockerfile` เอง) เลือก **Free plan**
+2. ใส่ **Environment Variables**: `SUPABASE_URL`, `SUPABASE_KEY` (anon key)
+3. Deploy เสร็จจะได้โดเมน `https://<ชื่อ>.onrender.com`
+4. **Google Console** → Authorized redirect URIs เพิ่ม: `https://<ชื่อ>.onrender.com/callback.php`
+   - ระบบ auto-detect redirect URI จากโดเมนปัจจุบันให้แล้ว (ดูค่าได้ที่แผงแอดมิน) — ไม่ต้องแก้ในโค้ด
+5. เปิดใช้งานได้เลย — แอดมินล็อกอินที่ `/admin_login.php` เพื่ออนุมัติบัญชี
+
+> Render free จะ sleep เมื่อไม่มีคนใช้ (เปิดครั้งแรกหลัง sleep จะช้า ~30 วิ) · session หายเมื่อ instance restart (ล็อกอินใหม่ได้)
+> ต้องใช้ HTTPS เท่านั้นกับ Google OAuth — Render ให้ SSL ฟรีอยู่แล้ว
+
 ## ระบบล็อกอินด้วย Google
 ทุกหน้าต้องล็อกอินก่อน (เรียก `require_login()`) เข้าได้เฉพาะอีเมลใน allowlist
 

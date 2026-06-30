@@ -1,0 +1,5 @@
+.git
+.gitignore
+config.local.php
+config.local.example.php
+*.md

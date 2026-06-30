@@ -53,7 +53,17 @@ function supabase_password_login($email, $password) {
     return ['status' => (int) $status, 'body' => json_decode($res, true)];
 }
 
-/** อ่านค่า Google OAuth — จากตาราง settings ก่อน แล้ว fallback ไปค่าคงที่ใน auth_config.php */
+/** สร้าง URL ของ callback.php จากคำขอปัจจุบัน (รองรับทุกโดเมน/พาธ อัตโนมัติ) */
+function current_callback_url() {
+    $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || ((int) ($_SERVER['SERVER_PORT'] ?? 0) === 443)
+        || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https') ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $dir  = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
+    return $proto . '://' . $host . $dir . '/callback.php';
+}
+
+/** อ่านค่า Google OAuth — settings ก่อน แล้ว fallback ไฟล์ config */
 function google_cfg($key) {
     static $map = [
         'client_id'     => ['s' => 'google_client_id',     'c' => 'GOOGLE_CLIENT_ID'],
@@ -61,9 +71,20 @@ function google_cfg($key) {
         'redirect_uri'  => ['s' => 'google_redirect_uri',  'c' => 'GOOGLE_REDIRECT_URI'],
     ];
     if (!isset($map[$key])) return '';
-    $v = trim((string) setting($map[$key]['s'], ''));
-    if ($v !== '') return $v;
-    return defined($map[$key]['c']) ? constant($map[$key]['c']) : '';
+
+    $val = trim((string) setting($map[$key]['s'], ''));
+    if ($val === '' && defined($map[$key]['c'])) $val = trim((string) constant($map[$key]['c']));
+
+    // redirect_uri: เดาจาก URL ปัจจุบันให้อัตโนมัติ ถ้ายังไม่ตั้ง หรือเป็นค่า localhost ค้างแต่จริง ๆ รันบนโดเมนอื่น
+    if ($key === 'redirect_uri' && PHP_SAPI !== 'cli') {
+        $host    = $_SERVER['HTTP_HOST'] ?? '';
+        $isLocal = strpos($host, 'localhost') !== false || strpos($host, '127.0.0.1') !== false;
+        $valIsLocal = strpos($val, 'localhost') !== false || strpos($val, '127.0.0.1') !== false;
+        if ($val === '' || ($valIsLocal && !$isLocal)) {
+            return current_callback_url();
+        }
+    }
+    return $val;
 }
 
 /** ตรวจว่าตั้งค่า Google ครบหรือยัง */
