@@ -57,10 +57,15 @@ function sb_insert($table, $data)     { return supabase_call($table, 'POST', $da
 function sb_update($endpoint, $data)  { return supabase_call($endpoint, 'PATCH', $data); }
 function sb_delete($endpoint)         { return supabase_call($endpoint, 'DELETE'); }
 
-/** กรองผลลัพธ์ให้เหลือเฉพาะ "แถวจริง" (กันกรณี body เป็น error object เช่นตารางยังไม่ถูกสร้าง) */
+/**
+ * กรองผลลัพธ์ให้เหลือเฉพาะ "แถวจริง"
+ * PostgREST สำเร็จ -> คืน list (array ดัชนีต่อเนื่อง) ของแถว | error -> คืน object (associative)
+ * จึงเช็คว่าเป็น list ไหม แทนการบังคับว่าต้องมีคอลัมน์ id (เดิมทำให้ select เฉพาะบางคอลัมน์โดนกรองทิ้ง)
+ */
 function sb_rows($res) {
-    if (!is_array($res)) return [];
-    return array_values(array_filter($res, fn($r) => is_array($r) && isset($r['id'])));
+    if (!is_array($res) || empty($res)) return [];
+    if (array_keys($res) !== range(0, count($res) - 1)) return []; // ไม่ใช่ list = error object
+    return array_values(array_filter($res, 'is_array'));
 }
 
 /** upsert (insert หรือ update ถ้า key ซ้ำ) — ใช้ token แอดมินเพื่อผ่าน RLS */

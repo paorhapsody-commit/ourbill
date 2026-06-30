@@ -70,7 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $myMember > 0) {
 
     } elseif ($action === 'delete') {
         $iid = (int) ($_POST['installment_id'] ?? 0);
-        $plan = sb_rows(sb_get('installments?id=eq.' . $iid . '&select=payee_id'));
+        $plan = sb_rows(sb_get('installments?id=eq.' . $iid . '&select=id,payee_id'));
         if (($plan[0]['payee_id'] ?? 0) == $myMember) sb_delete('installments?id=eq.' . $iid);
         header('Location: installments.php?removed=1'); exit;
     }
