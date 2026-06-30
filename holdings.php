@@ -31,20 +31,27 @@ $rows = $myMember ? sb_rows(sb_get(
     . '&or=(holder_id.eq.' . $myMember . ',owner_id.eq.' . $myMember . ')&order=created_at.desc'
 )) : [];
 
-$weHold = [];  // owner_id  => ['name','net']  เงินเพื่อนที่อยู่กับเรา
-$frHold = [];  // holder_id => ['name','net']  เงินของเราที่อยู่กับเพื่อน
+// ยอดสุทธิต่อเพื่อน รวมสองทิศ: + = เงินเพื่อนอยู่กับเรา | − = เงินเราอยู่กับเพื่อน
+$netByFriend = [];
 foreach ($rows as $h) {
     $amt = (float) $h['amount'];
     if ((int) $h['holder_id'] === $myMember && (int) $h['owner_id'] !== $myMember) {
         $k = (int) $h['owner_id'];
-        $weHold[$k]['name'] = $h['owner']['name'] ?? '?';
-        $weHold[$k]['net']  = ($weHold[$k]['net'] ?? 0) + $amt;
+        $netByFriend[$k]['name'] = $h['owner']['name'] ?? '?';
+        $netByFriend[$k]['net']  = ($netByFriend[$k]['net'] ?? 0) + $amt;   // เงินเพื่อนอยู่กับเรา (+)
     }
     if ((int) $h['owner_id'] === $myMember && (int) $h['holder_id'] !== $myMember) {
         $k = (int) $h['holder_id'];
-        $frHold[$k]['name'] = $h['holder']['name'] ?? '?';
-        $frHold[$k]['net']  = ($frHold[$k]['net'] ?? 0) + $amt;
+        $netByFriend[$k]['name'] = $h['holder']['name'] ?? '?';
+        $netByFriend[$k]['net']  = ($netByFriend[$k]['net'] ?? 0) - $amt;   // เงินเราอยู่กับเพื่อน (−)
     }
+}
+// แยกตามทิศทางสุทธิ — เพื่อนแต่ละคนอยู่การ์ดเดียวเท่านั้น
+$weHold = [];  // เงินเพื่อนที่อยู่กับเรา (สุทธิ)
+$frHold = [];  // เงินเราที่อยู่กับเพื่อน (สุทธิ, เก็บเป็นค่าบวก)
+foreach ($netByFriend as $k => $v) {
+    if ($v['net'] > 0.009)      $weHold[$k] = $v;
+    elseif ($v['net'] < -0.009) $frHold[$k] = ['name' => $v['name'], 'net' => -$v['net']];
 }
 $totalHeld = array_sum(array_column($weHold, 'net'));
 $totalMine = array_sum(array_column($frHold, 'net'));
@@ -64,7 +71,7 @@ layout_head('เงินเพื่อน', 'holdings.php');
 <h1 class="text-xl font-bold text-slate-700 flex items-center gap-2 mb-1">
     <i data-lucide="piggy-bank" class="w-6 h-6 text-emerald-500"></i> เงินเพื่อนที่ถือไว้
 </h1>
-<p class="text-sm text-slate-400 mb-5">บันทึกว่ามีเงินของเพื่อนคนไหนอยู่กับเราเท่าไหร่ จะได้ไม่ลืมคืน</p>
+<p class="text-sm text-slate-400 mb-5">บันทึกว่ามีเงินของเพื่อนคนไหนอยู่กับเราเท่าไหร่ จะได้ไม่ลืมคืน · การ์ดแสดง<b>ยอดสุทธิ</b> (หักลบสองทางแล้ว)</p>
 
 <?php if ($myMember === 0): ?>
     <div class="mb-5 p-4 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl flex items-center gap-2">
