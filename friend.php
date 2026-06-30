@@ -83,14 +83,25 @@ layout_head($friendName, 'friends.php');
     </div>
 </div>
 
-<?php if (abs($net) > 0.009): ?>
-<form method="POST" action="settle.php" class="mb-3"
-      onsubmit="return confirm('เคลียร์ยอดสุทธิรวม <?= baht(abs($net)) ?> ฿ กับ <?= htmlspecialchars(addslashes($friendName)) ?> ?\nระบบจะปิดยอดทั้งบิล เงินที่ถือไว้ และผ่อน ให้เป็น 0');">
-    <input type="hidden" name="action" value="settle_all">
+<?php if (abs($net) > 0.009): $friendOwesMe = $net > 0; ?>
+<form method="POST" action="settle.php" class="mb-3 bg-white rounded-2xl border border-slate-100 shadow-sm p-4"
+      onsubmit="return confirm('<?= $friendOwesMe ? htmlspecialchars(addslashes($friendName)).' จ่ายคืนเรา' : 'เราจ่ายคืน '.htmlspecialchars(addslashes($friendName)) ?> ตามจำนวนที่กรอก?\nส่วนต่าง (เกิน/ขาด) จะเก็บไว้ที่เงินเพื่อน');">
+    <input type="hidden" name="action" value="reconcile">
     <input type="hidden" name="friend_id" value="<?= $fid ?>">
-    <button type="submit" class="w-full bg-gradient-to-br from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white font-bold text-sm py-3 rounded-xl shadow-md shadow-emerald-200 transition flex items-center justify-center gap-2">
-        <i data-lucide="check-check" class="w-4 h-4"></i> เคลียร์ยอดสุทธิทั้งหมด (<?= baht(abs($net)) ?> ฿)
-    </button>
+    <p class="text-xs text-slate-500 mb-2">
+        สรุป: <b class="<?= $friendOwesMe ? 'text-emerald-600' : 'text-rose-500' ?>"><?= $friendOwesMe ? 'เพื่อนติดเรา' : 'เราติดเพื่อน' ?> <?= baht(abs($net)) ?> ฿</b> · กรอกจำนวนที่<?= $friendOwesMe ? 'เพื่อนจ่ายคืน' : 'เราจ่ายคืน' ?> แล้วกดเคลียร์
+    </p>
+    <div class="flex items-end gap-2">
+        <div class="flex-1">
+            <label class="block text-[11px] font-semibold text-slate-500 mb-1">จำนวนที่จ่ายคืน (฿)</label>
+            <input type="number" name="amount" step="0.01" min="0" value="<?= number_format(abs($net), 2, '.', '') ?>"
+                   class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-400">
+        </div>
+        <button type="submit" class="bg-gradient-to-br from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white font-bold text-sm py-2.5 px-6 rounded-xl shadow-md shadow-emerald-200 transition flex items-center justify-center gap-2 whitespace-nowrap">
+            <i data-lucide="check-check" class="w-4 h-4"></i> เคลียร์
+        </button>
+    </div>
+    <p class="text-[11px] text-slate-400 mt-2">ส่วนต่าง (จ่ายเกิน/ขาด) จะถูกเก็บเป็นเงินเพื่อนให้อัตโนมัติ</p>
 </form>
 <?php endif; ?>
 

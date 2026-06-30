@@ -405,35 +405,36 @@ function friend_timeline($myMember, $friendId) {
 }
 
 /**
- * เคลียร์ยอดสุทธิรวมกับเพื่อนคนเดียวให้เป็น 0 ในคลิกเดียว
- * จัดการทุก bucket: ลง settlement (ส่วนบิล) + คืนเงินที่ถือไว้ + จ่ายผ่อนที่เหลือ
- * คืน array สรุปสิ่งที่ทำ ['net','bill','holding','installment'] หรือ null ถ้าไม่มีอะไรต้องเคลียร์
+ * เคลียร์หนี้แบบสรุปรวม: ลูกหนี้จ่ายคืน $payAmount
+ * ปิดยอดทุก bucket (บิล + ผ่อนที่ถึงกำหนด + เงินที่ถือไว้เดิม) ให้เป็น 0
+ * แล้วยุบ "ส่วนต่าง" (จ่ายเกิน/ขาด) เหลือก้อนเดียวเก็บไว้ที่เงินเพื่อน (holdings)
+ * @param float $payAmount จำนวนที่ลูกหนี้จ่ายคืนจริง (null/<0 = จ่ายเต็มยอด)
+ * คืน ['net','paid','residual'] หรือ null ถ้าไม่มีอะไรต้องทำ
  */
-function settle_net_with_friend($myMember, $friendId) {
+function reconcile_with_friend($myMember, $friendId, $payAmount = null) {
     $me = (int) $myMember; $fr = (int) $friendId;
     if ($me <= 0 || $fr <= 0 || $me === $fr) return null;
 
     $all = unified_balances($me);
     $f   = $all[$fr] ?? null;
-    if (!$f || abs((float) $f['net']) < 0.009) return null;
+    if (!$f) return null;
 
-    $billB = round($f['bill'] + $f['settle'], 2);   // ส่วนบิลคงเหลือ (+ = เพื่อนติดเรา)
-    $holdB = round($f['holding'], 2);                // ส่วนเงินที่ถือไว้
-    $instB = round($f['installment'], 2);            // ส่วนผ่อนคงเหลือ
-    $note  = 'เคลียร์ยอดสุทธิรวม';
+    $net = round((float) $f['net'], 2);              // + = เพื่อนติดเรา | − = เราติดเพื่อน
+    $pay = ($payAmount === null || (float) $payAmount < 0) ? abs($net) : round((float) $payAmount, 2);
+    if (abs($net) < 0.009 && $pay < 0.009) return null;
 
-    // (1) เงินที่ถือไว้ -> ลงรายการคืน/รับคืน ให้ยอดถือระหว่างกันเป็น 0
+    $billB = round($f['bill'] + $f['settle'], 2);    // ส่วนบิลคงเหลือ (+ = เพื่อนติดเรา)
+    $holdB = round($f['holding'], 2);                 // ส่วนเงินที่ถือไว้
+    $instB = round($f['installment'], 2);             // ส่วนผ่อนคงเหลือ (เฉพาะที่ถึงกำหนด)
+    $note  = 'เคลียร์ยอดรวม';
+
+    // (1) ปิดยอดเงินที่ถือไว้เดิม -> holding bucket = 0
     if (abs($holdB) > 0.009) {
-        if ($holdB > 0) {
-            // เพื่อนถือเงินเรา -> เพื่อนคืนเงินเรา
-            sb_insert('holdings', ['holder_id' => $fr, 'owner_id' => $me, 'amount' => -$holdB, 'note' => $note]);
-        } else {
-            // เราถือเงินเพื่อน -> เราคืนเงินเพื่อน (amount ติดลบอยู่แล้ว = คืน)
-            sb_insert('holdings', ['holder_id' => $me, 'owner_id' => $fr, 'amount' => $holdB, 'note' => $note]);
-        }
+        if ($holdB > 0) sb_insert('holdings', ['holder_id' => $fr, 'owner_id' => $me, 'amount' => -$holdB, 'note' => $note]);
+        else            sb_insert('holdings', ['holder_id' => $me, 'owner_id' => $fr, 'amount' => $holdB,  'note' => $note]);
     }
 
-    // (2) ผ่อนรายเดือน -> จ่ายงวดที่เหลือของทุกแผนระหว่างกันให้ครบ
+    // (2) ปิดงวดผ่อนที่ถึงกำหนด -> installment bucket = 0
     if (abs($instB) > 0.009) {
         $plans = sb_rows(sb_get('installments?select=id,monthly_amount,months,start_date'
             . '&or=(and(payee_id.eq.' . $me . ',payer_id.eq.' . $fr . '),and(payer_id.eq.' . $me . ',payee_id.eq.' . $fr . '))'));
@@ -444,7 +445,7 @@ function settle_net_with_friend($myMember, $friendId) {
                 $paid[(int) $pm['installment_id']] = ($paid[(int) $pm['installment_id']] ?? 0) + (float) $pm['amount'];
             }
             foreach ($plans as $p) {
-                $remain = installment_due_outstanding($p, $paid[(int) $p['id']] ?? 0); // เฉพาะงวดที่ครบกำหนด
+                $remain = installment_due_outstanding($p, $paid[(int) $p['id']] ?? 0);
                 if ($remain > 0.009) {
                     sb_insert('installment_payments', ['installment_id' => (int) $p['id'], 'amount' => $remain, 'source' => 'cash', 'note' => $note]);
                 }
@@ -452,16 +453,23 @@ function settle_net_with_friend($myMember, $friendId) {
         }
     }
 
-    // (3) ส่วนบิล -> ลง settlement ตามทิศทาง
+    // (3) ปิดยอดบิล -> bill bucket = 0
     if (abs($billB) > 0.009) {
-        if ($billB > 0) {
-            sb_insert('settlements', ['from_user' => $fr, 'to_user' => $me, 'amount' => $billB,  'note' => $note]);
-        } else {
-            sb_insert('settlements', ['from_user' => $me, 'to_user' => $fr, 'amount' => -$billB, 'note' => $note]);
-        }
+        if ($billB > 0) sb_insert('settlements', ['from_user' => $fr, 'to_user' => $me, 'amount' => $billB,  'note' => $note]);
+        else            sb_insert('settlements', ['from_user' => $me, 'to_user' => $fr, 'amount' => -$billB, 'note' => $note]);
     }
 
-    return ['net' => round((float) $f['net'], 2), 'bill' => $billB, 'holding' => $holdB, 'installment' => $instB];
+    // ตอนนี้ net = 0 ทุก bucket — เก็บส่วนต่างหลังลูกหนี้จ่าย $pay เป็น "เงินเพื่อน"
+    $residual = round($net - ($net >= 0 ? $pay : -$pay), 2); // + = เพื่อนยังติดเรา | − = เพื่อนจ่ายเกิน/เราติด
+    if ($residual > 0.009) {
+        // เพื่อนยังติดเรา -> เงินเราอยู่กับเพื่อน
+        sb_insert('holdings', ['holder_id' => $fr, 'owner_id' => $me, 'amount' => $residual, 'note' => 'ส่วนต่างหลังเคลียร์']);
+    } elseif ($residual < -0.009) {
+        // เพื่อนจ่ายเกิน / เราติดเพื่อน -> เงินเพื่อนอยู่กับเรา
+        sb_insert('holdings', ['holder_id' => $me, 'owner_id' => $fr, 'amount' => -$residual, 'note' => 'ส่วนต่างหลังเคลียร์']);
+    }
+
+    return ['net' => $net, 'paid' => $pay, 'residual' => $residual];
 }
 
 /** แลก authorization code เป็น access token */

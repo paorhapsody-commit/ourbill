@@ -7,9 +7,10 @@ require_once '_layout.php';
 $me       = (int) ($_SESSION['user']['account_id'] ?? 0);
 $myMember = (int) ($_SESSION['user']['member_id'] ?? 0);
 
-// เคลียร์ยอดสุทธิรวมทีเดียว (บิล + เงินถือไว้ + ผ่อน) ให้เป็น 0
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'settle_all' && $myMember > 0) {
-    settle_net_with_friend($myMember, (int) ($_POST['friend_id'] ?? 0));
+// เคลียร์หนี้แบบสรุปรวม: ลูกหนี้จ่ายคืน $amount, ส่วนต่างเก็บที่เงินเพื่อน
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reconcile' && $myMember > 0) {
+    $amt = isset($_POST['amount']) && $_POST['amount'] !== '' ? (float) $_POST['amount'] : null;
+    reconcile_with_friend($myMember, (int) ($_POST['friend_id'] ?? 0), $amt);
     header('Location: settle.php?cleared=1');
     exit;
 }
@@ -52,7 +53,7 @@ layout_head('เคลียร์หนี้', 'settle.php');
 <h1 class="text-xl font-bold text-slate-700 flex items-center gap-2 mb-1">
     <i data-lucide="arrow-right-left" class="w-6 h-6 text-emerald-500"></i> เคลียร์หนี้
 </h1>
-<p class="text-sm text-slate-400 mb-6">ยอดสุทธิรวมทุกอย่าง (หารบิล + เงินที่ถือไว้ + ผ่อนรายเดือน) · กด <b>เคลียร์ทั้งหมด</b> เมื่อจ่ายเงินจริงแล้ว ระบบจะปิดยอดทุกส่วนให้เป็น 0</p>
+<p class="text-sm text-slate-400 mb-6">สรุปแล้วใครเป็นหนี้ใคร · <b>ลูกหนี้กรอกจำนวนที่จ่ายคืน</b> แล้วกดเคลียร์ — ปิดยอดบิล/ผ่อนที่ถึงกำหนด/เงินที่ถือไว้ทั้งหมด ส่วนต่าง (จ่ายเกิน/ขาด) เก็บไว้ที่ <a href="holdings.php" class="text-emerald-600 font-semibold">เงินเพื่อน</a></p>
 
 <?php if (isset($_GET['cleared'])): ?>
     <div class="mb-5 p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-medium rounded-xl flex items-center gap-2">
@@ -106,13 +107,18 @@ layout_head('เคลียร์หนี้', 'settle.php');
                         </div>
                     </div>
                 </a>
-                <form method="POST" class="sm:w-auto"
-                      onsubmit="return confirm('เคลียร์ยอดสุทธิรวม <?= baht(abs($net)) ?> ฿ กับ <?= htmlspecialchars(addslashes($f['name'])) ?> ?\nระบบจะปิดยอดทั้งบิล เงินที่ถือไว้ และผ่อน ให้เป็น 0');">
-                    <input type="hidden" name="action" value="settle_all">
+                <form method="POST" class="sm:w-auto flex items-end gap-2"
+                      onsubmit="return confirm('<?= $friendOwesMe ? htmlspecialchars(addslashes($f['name'])).' จ่ายคืนเรา' : 'เราจ่ายคืน '.htmlspecialchars(addslashes($f['name'])) ?> ตามจำนวนที่กรอก?\nส่วนต่าง (เกิน/ขาด) จะเก็บไว้ที่เงินเพื่อน');">
+                    <input type="hidden" name="action" value="reconcile">
                     <input type="hidden" name="friend_id" value="<?= $f['id'] ?>">
+                    <div>
+                        <label class="block text-[11px] font-semibold text-slate-500 mb-1"><?= $friendOwesMe ? 'เพื่อนจ่ายคืน' : 'เราจ่ายคืน' ?> (฿)</label>
+                        <input type="number" name="amount" step="0.01" min="0" value="<?= number_format(abs($net), 2, '.', '') ?>"
+                               class="w-28 px-3 py-2 border border-slate-200 rounded-lg text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-400">
+                    </div>
                     <button type="submit"
-                            class="w-full sm:w-auto bg-gradient-to-br from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white font-semibold text-sm px-5 py-2.5 rounded-xl shadow-md shadow-emerald-200 transition flex items-center justify-center gap-2">
-                        <i data-lucide="check-check" class="w-4 h-4"></i> เคลียร์ทั้งหมด
+                            class="bg-gradient-to-br from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white font-semibold text-sm px-5 py-2 rounded-xl shadow-md shadow-emerald-200 transition flex items-center justify-center gap-2 whitespace-nowrap">
+                        <i data-lucide="check-check" class="w-4 h-4"></i> เคลียร์
                     </button>
                 </form>
             </div>
