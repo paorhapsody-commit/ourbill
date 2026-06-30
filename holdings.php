@@ -79,13 +79,58 @@ layout_head('เงินเพื่อน', 'holdings.php');
     </div>
 <?php endif; ?>
 
-<!-- สรุปยอดรวม -->
-<div class="bg-gradient-to-br from-emerald-400 to-teal-500 rounded-2xl p-6 shadow-lg shadow-emerald-200 text-white mb-6">
-    <p class="text-emerald-50 text-sm flex items-center gap-1.5"><i data-lucide="wallet" class="w-4 h-4"></i> เงินเพื่อนที่อยู่กับเราตอนนี้</p>
-    <p class="text-4xl font-black mt-1"><?= baht($totalHeld) ?> <span class="text-lg font-medium text-emerald-100">฿</span></p>
-    <?php if ($totalMine > 0.009): ?>
-        <p class="text-emerald-50 text-xs mt-3 flex items-center gap-1.5"><i data-lucide="corner-down-right" class="w-3.5 h-3.5"></i> เงินของเราที่ฝากไว้กับเพื่อน: <b><?= baht($totalMine) ?> ฿</b></p>
-    <?php endif; ?>
+<!-- 2 การ์ด: เงินเพื่อนที่อยู่กับเรา / เงินเราที่อยู่กับเพื่อน (หักลบสุทธิแล้ว) -->
+<?php
+$shownHeld = array_filter($weHold, fn($v) => abs($v['net']) > 0.009);
+$shownMine = array_filter($frHold, fn($v) => abs($v['net']) > 0.009);
+?>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+    <!-- เงินเพื่อนที่อยู่กับเรา -->
+    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+        <div class="p-4 bg-gradient-to-br from-emerald-400 to-teal-500 text-white">
+            <p class="text-emerald-50 text-xs flex items-center gap-1.5"><i data-lucide="piggy-bank" class="w-4 h-4"></i> เงินเพื่อนที่อยู่กับเรา</p>
+            <p class="text-3xl font-black mt-0.5"><?= baht($totalHeld) ?> <span class="text-base font-medium text-emerald-100">฿</span></p>
+        </div>
+        <div class="divide-y divide-slate-50 flex-1">
+            <?php if (empty($shownHeld)): ?>
+                <p class="p-6 text-center text-slate-400 text-sm">ไม่มีเงินเพื่อนที่ถือไว้</p>
+            <?php else: foreach ($shownHeld as $oid => $v): ?>
+                <div class="flex items-center gap-3 p-3.5">
+                    <?= avatar($oid, $v['name'], 'w-9 h-9 text-sm') ?>
+                    <span class="flex-1 min-w-0 font-semibold text-slate-700 text-sm truncate"><?= htmlspecialchars($v['name']) ?></span>
+                    <span class="font-black text-sm <?= $v['net'] >= 0 ? 'text-emerald-600' : 'text-rose-500' ?>"><?= baht($v['net']) ?> ฿</span>
+                    <?php if ($v['net'] > 0.009): ?>
+                        <form method="POST" onsubmit="return confirm('บันทึกว่าคืนเงิน <?= baht($v['net']) ?> ฿ ให้ <?= htmlspecialchars(addslashes($v['name'])) ?> ?');">
+                            <input type="hidden" name="action" value="add">
+                            <input type="hidden" name="owner_id" value="<?= $oid ?>">
+                            <input type="hidden" name="amount" value="<?= $v['net'] ?>">
+                            <input type="hidden" name="direction" value="out">
+                            <input type="hidden" name="note" value="คืนเงินทั้งหมด">
+                            <button class="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-100 text-slate-500 hover:text-emerald-700 whitespace-nowrap">คืนครบ</button>
+                        </form>
+                    <?php endif; ?>
+                </div>
+            <?php endforeach; endif; ?>
+        </div>
+    </div>
+    <!-- เงินเราที่อยู่กับเพื่อน -->
+    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+        <div class="p-4 bg-gradient-to-br from-sky-400 to-cyan-500 text-white">
+            <p class="text-sky-50 text-xs flex items-center gap-1.5"><i data-lucide="wallet" class="w-4 h-4"></i> เงินเราที่อยู่กับเพื่อน</p>
+            <p class="text-3xl font-black mt-0.5"><?= baht($totalMine) ?> <span class="text-base font-medium text-sky-100">฿</span></p>
+        </div>
+        <div class="divide-y divide-slate-50 flex-1">
+            <?php if (empty($shownMine)): ?>
+                <p class="p-6 text-center text-slate-400 text-sm">ไม่มีเงินของเราที่ฝากเพื่อน</p>
+            <?php else: foreach ($shownMine as $hid => $v): ?>
+                <div class="flex items-center gap-3 p-3.5">
+                    <?= avatar($hid, $v['name'], 'w-9 h-9 text-sm') ?>
+                    <span class="flex-1 min-w-0 font-semibold text-slate-700 text-sm truncate"><?= htmlspecialchars($v['name']) ?></span>
+                    <span class="font-black text-sm <?= $v['net'] >= 0 ? 'text-sky-600' : 'text-rose-500' ?>"><?= baht($v['net']) ?> ฿</span>
+                </div>
+            <?php endforeach; endif; ?>
+        </div>
+    </div>
 </div>
 
 <!-- ฟอร์มเพิ่ม -->
@@ -140,50 +185,6 @@ layout_head('เงินเพื่อน', 'holdings.php');
     </button>
     <?php endif; ?>
 </form>
-
-<!-- เงินเพื่อนที่อยู่กับเรา (รายคน) -->
-<h2 class="text-sm font-bold text-slate-500 mb-2 px-1 flex items-center gap-1.5"><i data-lucide="users" class="w-4 h-4"></i> แยกตามเพื่อน</h2>
-<div class="space-y-2 mb-6">
-    <?php
-    $shown = array_filter($weHold, fn($v) => abs($v['net']) > 0.009);
-    if (empty($shown)): ?>
-        <div class="bg-white rounded-2xl p-6 text-center text-slate-400 border border-dashed border-slate-200 text-sm">ยังไม่มีเงินเพื่อนที่ถือไว้</div>
-    <?php else: foreach ($shown as $oid => $v): ?>
-        <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-3.5 flex items-center gap-3">
-            <?= avatar($oid, $v['name'], 'w-10 h-10 text-sm') ?>
-            <div class="flex-1 min-w-0">
-                <p class="font-semibold text-slate-800 truncate"><?= htmlspecialchars($v['name']) ?></p>
-                <p class="text-xs text-slate-400">เงินของเขาที่อยู่กับเรา</p>
-            </div>
-            <span class="font-black <?= $v['net'] >= 0 ? 'text-emerald-600' : 'text-rose-500' ?>"><?= baht($v['net']) ?> ฿</span>
-            <?php if ($v['net'] > 0.009): ?>
-                <form method="POST" onsubmit="return confirm('บันทึกว่าคืนเงิน <?= baht($v['net']) ?> ฿ ให้ <?= htmlspecialchars(addslashes($v['name'])) ?> ?');">
-                    <input type="hidden" name="action" value="add">
-                    <input type="hidden" name="owner_id" value="<?= $oid ?>">
-                    <input type="hidden" name="amount" value="<?= $v['net'] ?>">
-                    <input type="hidden" name="direction" value="out">
-                    <input type="hidden" name="note" value="คืนเงินทั้งหมด">
-                    <button class="text-xs font-semibold px-3 py-2 rounded-lg bg-slate-100 hover:bg-emerald-100 text-slate-500 hover:text-emerald-700 whitespace-nowrap">คืนครบ</button>
-                </form>
-            <?php endif; ?>
-        </div>
-    <?php endforeach; endif; ?>
-</div>
-
-<!-- เงินของเราที่ฝากเพื่อน -->
-<?php $shownMine = array_filter($frHold, fn($v) => abs($v['net']) > 0.009);
-if (!empty($shownMine)): ?>
-    <h2 class="text-sm font-bold text-slate-500 mb-2 px-1 flex items-center gap-1.5"><i data-lucide="corner-down-right" class="w-4 h-4"></i> เงินของเราที่ฝากไว้กับเพื่อน</h2>
-    <div class="space-y-2 mb-6">
-        <?php foreach ($shownMine as $hid => $v): ?>
-            <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-3.5 flex items-center gap-3 opacity-90">
-                <?= avatar($hid, $v['name'], 'w-9 h-9 text-sm') ?>
-                <span class="font-medium text-slate-700 text-sm flex-1 truncate">อยู่กับ <?= htmlspecialchars($v['name']) ?></span>
-                <span class="font-bold text-sky-600"><?= baht($v['net']) ?> ฿</span>
-            </div>
-        <?php endforeach; ?>
-    </div>
-<?php endif; ?>
 
 <!-- ประวัติ -->
 <h2 class="text-sm font-bold text-slate-500 mb-2 px-1 flex items-center gap-1.5"><i data-lucide="history" class="w-4 h-4"></i> ประวัติล่าสุด</h2>
