@@ -31,27 +31,14 @@ $rows = $myMember ? sb_rows(sb_get(
     . '&or=(holder_id.eq.' . $myMember . ',owner_id.eq.' . $myMember . ')&order=created_at.desc'
 )) : [];
 
-// ยอดสุทธิต่อเพื่อน รวมสองทิศ: + = เงินเพื่อนอยู่กับเรา | − = เงินเราอยู่กับเพื่อน
-$netByFriend = [];
-foreach ($rows as $h) {
-    $amt = (float) $h['amount'];
-    if ((int) $h['holder_id'] === $myMember && (int) $h['owner_id'] !== $myMember) {
-        $k = (int) $h['owner_id'];
-        $netByFriend[$k]['name'] = $h['owner']['name'] ?? '?';
-        $netByFriend[$k]['net']  = ($netByFriend[$k]['net'] ?? 0) + $amt;   // เงินเพื่อนอยู่กับเรา (+)
-    }
-    if ((int) $h['owner_id'] === $myMember && (int) $h['holder_id'] !== $myMember) {
-        $k = (int) $h['holder_id'];
-        $netByFriend[$k]['name'] = $h['holder']['name'] ?? '?';
-        $netByFriend[$k]['net']  = ($netByFriend[$k]['net'] ?? 0) - $amt;   // เงินเราอยู่กับเพื่อน (−)
-    }
-}
-// แยกตามทิศทางสุทธิ — เพื่อนแต่ละคนอยู่การ์ดเดียวเท่านั้น
+// ยอดสุทธิต่อเพื่อน = เงินที่ถือไว้ + บิล/รายจ่าย + เคลียร์หนี้ (ไม่รวมผ่อนรายเดือน — มีหน้าแยก)
+//  custody > 0 = สุทธิแล้วเงินเพื่อนอยู่กับเรา (เราติดเพื่อน) | < 0 = เงินเราอยู่กับเพื่อน (เพื่อนติดเรา)
 $weHold = [];  // เงินเพื่อนที่อยู่กับเรา (สุทธิ)
 $frHold = [];  // เงินเราที่อยู่กับเพื่อน (สุทธิ, เก็บเป็นค่าบวก)
-foreach ($netByFriend as $k => $v) {
-    if ($v['net'] > 0.009)      $weHold[$k] = $v;
-    elseif ($v['net'] < -0.009) $frHold[$k] = ['name' => $v['name'], 'net' => -$v['net']];
+foreach (unified_balances($myMember) as $fid => $b) {
+    $custody = round(-($b['bill'] + $b['settle'] + $b['holding']), 2); // หักลบบิลที่เพื่อนออกให้ด้วย
+    if ($custody > 0.009)      $weHold[$fid] = ['name' => $b['name'], 'net' => $custody];
+    elseif ($custody < -0.009) $frHold[$fid] = ['name' => $b['name'], 'net' => -$custody];
 }
 $totalHeld = array_sum(array_column($weHold, 'net'));
 $totalMine = array_sum(array_column($frHold, 'net'));
@@ -71,7 +58,7 @@ layout_head('เงินเพื่อน', 'holdings.php');
 <h1 class="text-xl font-bold text-slate-700 flex items-center gap-2 mb-1">
     <i data-lucide="piggy-bank" class="w-6 h-6 text-emerald-500"></i> เงินเพื่อนที่ถือไว้
 </h1>
-<p class="text-sm text-slate-400 mb-5">บันทึกว่ามีเงินของเพื่อนคนไหนอยู่กับเราเท่าไหร่ จะได้ไม่ลืมคืน · การ์ดแสดง<b>ยอดสุทธิ</b> (หักลบสองทางแล้ว)</p>
+<p class="text-sm text-slate-400 mb-5">บันทึกว่ามีเงินของเพื่อนคนไหนอยู่กับเราเท่าไหร่ จะได้ไม่ลืมคืน · การ์ดแสดง<b>ยอดสุทธิ</b> หักลบกับบิล/รายจ่ายที่เพื่อนออกให้แล้ว (ไม่รวมผ่อนรายเดือน)</p>
 
 <?php if ($myMember === 0): ?>
     <div class="mb-5 p-4 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl flex items-center gap-2">
@@ -102,21 +89,12 @@ $shownMine = array_filter($frHold, fn($v) => abs($v['net']) > 0.009);
             <?php if (empty($shownHeld)): ?>
                 <p class="p-6 text-center text-slate-400 text-sm">ไม่มีเงินเพื่อนที่ถือไว้</p>
             <?php else: foreach ($shownHeld as $oid => $v): ?>
-                <div class="flex items-center gap-3 p-3.5">
+                <a href="friend.php?id=<?= $oid ?>" class="flex items-center gap-3 p-3.5 hover:bg-emerald-50/40 transition group">
                     <?= avatar($oid, $v['name'], 'w-9 h-9 text-sm') ?>
-                    <span class="flex-1 min-w-0 font-semibold text-slate-700 text-sm truncate"><?= htmlspecialchars($v['name']) ?></span>
-                    <span class="font-black text-sm <?= $v['net'] >= 0 ? 'text-emerald-600' : 'text-rose-500' ?>"><?= baht($v['net']) ?> ฿</span>
-                    <?php if ($v['net'] > 0.009): ?>
-                        <form method="POST" onsubmit="return confirm('บันทึกว่าคืนเงิน <?= baht($v['net']) ?> ฿ ให้ <?= htmlspecialchars(addslashes($v['name'])) ?> ?');">
-                            <input type="hidden" name="action" value="add">
-                            <input type="hidden" name="owner_id" value="<?= $oid ?>">
-                            <input type="hidden" name="amount" value="<?= $v['net'] ?>">
-                            <input type="hidden" name="direction" value="out">
-                            <input type="hidden" name="note" value="คืนเงินทั้งหมด">
-                            <button class="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-100 text-slate-500 hover:text-emerald-700 whitespace-nowrap">คืนครบ</button>
-                        </form>
-                    <?php endif; ?>
-                </div>
+                    <span class="flex-1 min-w-0 font-semibold text-slate-700 text-sm truncate group-hover:text-emerald-600"><?= htmlspecialchars($v['name']) ?></span>
+                    <span class="font-black text-sm text-emerald-600"><?= baht($v['net']) ?> ฿</span>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-slate-300 shrink-0"></i>
+                </a>
             <?php endforeach; endif; ?>
         </div>
     </div>
@@ -130,11 +108,12 @@ $shownMine = array_filter($frHold, fn($v) => abs($v['net']) > 0.009);
             <?php if (empty($shownMine)): ?>
                 <p class="p-6 text-center text-slate-400 text-sm">ไม่มีเงินของเราที่ฝากเพื่อน</p>
             <?php else: foreach ($shownMine as $hid => $v): ?>
-                <div class="flex items-center gap-3 p-3.5">
+                <a href="friend.php?id=<?= $hid ?>" class="flex items-center gap-3 p-3.5 hover:bg-sky-50/40 transition group">
                     <?= avatar($hid, $v['name'], 'w-9 h-9 text-sm') ?>
-                    <span class="flex-1 min-w-0 font-semibold text-slate-700 text-sm truncate"><?= htmlspecialchars($v['name']) ?></span>
-                    <span class="font-black text-sm <?= $v['net'] >= 0 ? 'text-sky-600' : 'text-rose-500' ?>"><?= baht($v['net']) ?> ฿</span>
-                </div>
+                    <span class="flex-1 min-w-0 font-semibold text-slate-700 text-sm truncate group-hover:text-sky-600"><?= htmlspecialchars($v['name']) ?></span>
+                    <span class="font-black text-sm text-sky-600"><?= baht($v['net']) ?> ฿</span>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-slate-300 shrink-0"></i>
+                </a>
             <?php endforeach; endif; ?>
         </div>
     </div>
