@@ -84,8 +84,9 @@ layout_head($friendName, 'friends.php');
 </div>
 
 <?php if (abs($net) > 0.009): $friendOwesMe = $net > 0; ?>
-<form method="POST" action="settle.php" class="mb-3 bg-white rounded-2xl border border-slate-100 shadow-sm p-4"
-      onsubmit="return confirm('<?= $friendOwesMe ? htmlspecialchars(addslashes($friendName)).' จ่ายคืนเรา' : 'เราจ่ายคืน '.htmlspecialchars(addslashes($friendName)) ?> ตามจำนวนที่กรอก?\nส่วนต่าง (เกิน/ขาด) จะเก็บไว้ที่เงินเพื่อน');">
+<form method="POST" action="settle.php" class="js-reconcile-form mb-3 bg-white rounded-2xl border border-slate-100 shadow-sm p-4"
+      data-name="<?= htmlspecialchars($friendName, ENT_QUOTES) ?>" data-net="<?= round($net, 2) ?>"
+      data-bill="<?= round($bal['bill'] + $bal['settle'], 2) ?>" data-hold="<?= round((float) $bal['holding'], 2) ?>" data-inst="<?= round((float) $bal['installment'], 2) ?>">
     <input type="hidden" name="action" value="reconcile">
     <input type="hidden" name="friend_id" value="<?= $fid ?>">
     <p class="text-xs text-slate-500 mb-2">
@@ -153,4 +154,5 @@ layout_head($friendName, 'friends.php');
 <?php endif; ?>
 
 <?php endif; // valid ?>
+<?php reconcile_modal(); ?>
 <?php layout_foot(); ?>

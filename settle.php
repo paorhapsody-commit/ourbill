@@ -107,8 +107,9 @@ layout_head('เคลียร์หนี้', 'settle.php');
                         </div>
                     </div>
                 </a>
-                <form method="POST" class="sm:w-auto flex items-end gap-2"
-                      onsubmit="return confirm('<?= $friendOwesMe ? htmlspecialchars(addslashes($f['name'])).' จ่ายคืนเรา' : 'เราจ่ายคืน '.htmlspecialchars(addslashes($f['name'])) ?> ตามจำนวนที่กรอก?\nส่วนต่าง (เกิน/ขาด) จะเก็บไว้ที่เงินเพื่อน');">
+                <form method="POST" class="js-reconcile-form sm:w-auto flex items-end gap-2"
+                      data-name="<?= htmlspecialchars($f['name'], ENT_QUOTES) ?>" data-net="<?= $net ?>"
+                      data-bill="<?= round($f['bill'] + $f['settle'], 2) ?>" data-hold="<?= round((float) $f['holding'], 2) ?>" data-inst="<?= round((float) $f['installment'], 2) ?>">
                     <input type="hidden" name="action" value="reconcile">
                     <input type="hidden" name="friend_id" value="<?= $f['id'] ?>">
                     <div>
@@ -182,4 +183,5 @@ layout_head('เคลียร์หนี้', 'settle.php');
     <?php endforeach; endif; ?>
 </div>
 
+<?php reconcile_modal(); ?>
 <?php layout_foot(); ?>

@@ -253,6 +253,57 @@ function installments_due_alerts($myMember) {
 }
 
 /**
+ * รวบรวมทุกธุรกรรมที่เกี่ยวกับเรา จัดกลุ่มตามวัน (สำหรับปฏิทินหน้าแรก)
+ * คืน list: [date(Y-m-d), icon, title, sub, amount, sign('+'/'-'/'')]
+ */
+function calendar_events($myMember) {
+    $me = (int) $myMember;
+    if ($me <= 0) return [];
+    $ev = [];
+    $add = function (&$ev, $ts, $icon, $title, $sub, $amount, $sign) {
+        $d = substr((string) $ts, 0, 10);
+        if (!$d) return;
+        $ev[] = ['date' => $d, 'icon' => $icon, 'title' => $title, 'sub' => $sub,
+                 'amount' => round((float) $amount, 2), 'sign' => $sign];
+    };
+
+    // บิลที่เราจ่ายก่อน
+    foreach (sb_rows(sb_get('expenses?paid_by=eq.' . $me . '&select=id,title,total_amount,created_at')) as $e) {
+        $add($ev, $e['created_at'] ?? '', 'receipt', $e['title'] ?? 'รายจ่าย', 'เราจ่ายก่อน', $e['total_amount'] ?? 0, '');
+    }
+    // บิลที่เพื่อนจ่ายก่อน + เรามีส่วนหาร
+    foreach (sb_rows(sb_get('expense_splits?user_id=eq.' . $me . '&select=amount,expenses(id,title,created_at,paid_by)')) as $s) {
+        $exp = $s['expenses'] ?? null;
+        if (!$exp || (int) ($exp['paid_by'] ?? 0) === $me) continue;
+        $add($ev, $exp['created_at'] ?? '', 'receipt', $exp['title'] ?? 'รายจ่าย', 'ส่วนแบ่งของเรา', $s['amount'] ?? 0, '');
+    }
+    // เคลียร์หนี้
+    foreach (sb_rows(sb_get('settlements?or=(from_user.eq.' . $me . ',to_user.eq.' . $me . ')&select=from_user,to_user,amount,created_at,fromu:from_user(name),tou:to_user(name)')) as $st) {
+        $iPaid = (int) $st['from_user'] === $me;
+        $other = $iPaid ? ($st['tou']['name'] ?? '?') : ($st['fromu']['name'] ?? '?');
+        $add($ev, $st['created_at'] ?? '', 'arrow-right-left', 'เคลียร์หนี้', ($iPaid ? 'จ่ายคืน ' : 'รับคืนจาก ') . $other, $st['amount'] ?? 0, $iPaid ? '-' : '+');
+    }
+    // เงินที่ถือไว้
+    foreach (sb_rows(sb_get('holdings?or=(holder_id.eq.' . $me . ',owner_id.eq.' . $me . ')&select=holder_id,owner_id,amount,note,created_at,holder:holder_id(name),owner:owner_id(name)')) as $h) {
+        $weHold = (int) $h['holder_id'] === $me;
+        $other  = $weHold ? ($h['owner']['name'] ?? '?') : ($h['holder']['name'] ?? '?');
+        $amt    = (float) $h['amount'];
+        $sub    = ($weHold ? ($amt >= 0 ? 'รับเงิน ' : 'คืนเงินให้ ') : ($amt >= 0 ? 'ถือเงินเรา · ' : 'คืนเงินเรา · ')) . $other;
+        $add($ev, $h['created_at'] ?? '', 'piggy-bank', 'เงินที่ถือไว้', $sub, abs($amt), '');
+    }
+    // จ่ายงวดผ่อน
+    $plans = sb_rows(sb_get('installments?or=(payee_id.eq.' . $me . ',payer_id.eq.' . $me . ')&select=id,title'));
+    if ($plans) {
+        $titleOf = []; foreach ($plans as $p) $titleOf[(int) $p['id']] = $p['title'];
+        $ids = implode(',', array_map(fn($p) => (int) $p['id'], $plans));
+        foreach (sb_rows(sb_get('installment_payments?installment_id=in.(' . $ids . ')&select=installment_id,amount,paid_at')) as $pm) {
+            $add($ev, $pm['paid_at'] ?? '', 'banknote', 'จ่ายงวด: ' . ($titleOf[(int) $pm['installment_id']] ?? '-'), '', $pm['amount'] ?? 0, '');
+        }
+    }
+    return $ev;
+}
+
+/**
  * ยอดสุทธิรวมทุกฟังก์ชัน ระหว่างเรากับเพื่อนแต่ละคน (จากมุมของ $myMember)
  * รวม: หารบิล + เคลียร์หนี้ + เงินเพื่อนที่ถือไว้ + ผ่อนรายเดือน
  * คืน array: fid => [id, name, bill, settle, holding, installment, net]

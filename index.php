@@ -9,6 +9,10 @@ $friends  = unified_balances($myMember);   // ยอดสุทธิรวม�
 $ledger   = sb_get('expenses?select=*,users(name)&order=created_at.desc&limit=8') ?: [];
 $dueAlerts = installments_due_alerts($myMember);  // ผ่อนที่ถึงกำหนดงวดแล้ว
 
+// รายการสำหรับปฏิทิน จัดกลุ่มตามวัน
+$calByDate = [];
+foreach (calendar_events($myMember) as $e) { $calByDate[$e['date']][] = $e; }
+
 // สรุปจากมุมของเรา
 $owedToMe = 0; $iOwe = 0; $installRecv = 0; $held = 0;
 foreach ($friends as $f) {
@@ -79,6 +83,88 @@ layout_head('หน้าหลัก', 'index.php');
         <p class="text-2xl font-extrabold"><?= baht($installRecv) ?> <span class="text-sm font-medium text-emerald-100">฿</span></p>
     </a>
 </div>
+
+<!-- ปฏิทินรายการ -->
+<div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 md:p-5 mb-7">
+    <div class="flex items-center justify-between mb-3">
+        <button type="button" id="calPrev" class="p-2 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-emerald-600 transition"><i data-lucide="chevron-left" class="w-5 h-5"></i></button>
+        <h2 id="calTitle" class="text-base font-bold text-slate-700 flex items-center gap-2"><i data-lucide="calendar" class="w-5 h-5 text-emerald-500"></i> <span></span></h2>
+        <button type="button" id="calNext" class="p-2 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-emerald-600 transition"><i data-lucide="chevron-right" class="w-5 h-5"></i></button>
+    </div>
+    <div class="grid grid-cols-7 gap-1 text-center text-[11px] font-semibold text-slate-400 mb-1">
+        <span>อา</span><span>จ</span><span>อ</span><span>พ</span><span>พฤ</span><span>ศ</span><span>ส</span>
+    </div>
+    <div id="calGrid" class="grid grid-cols-7 gap-1"></div>
+    <div id="calDay" class="mt-4"></div>
+</div>
+
+<script>
+(function () {
+    const EVENTS = <?= json_encode($calByDate, JSON_UNESCAPED_UNICODE) ?> || {};
+    const MONTHS = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+    const ICON = { receipt:'receipt', 'arrow-right-left':'arrow-right-left', 'piggy-bank':'piggy-bank', banknote:'banknote' };
+    const grid = document.getElementById('calGrid');
+    const dayBox = document.getElementById('calDay');
+    const title = document.querySelector('#calTitle span');
+    const today = '<?= date('Y-m-d') ?>';
+    let view = new Date('<?= date('Y-m-01') ?>T00:00:00');
+    let selected = today;
+
+    function fmt(n){ return Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+    function pad(n){ return (n<10?'0':'')+n; }
+    function key(y,m,d){ return y+'-'+pad(m+1)+'-'+pad(d); }
+
+    function renderDay(dstr){
+        selected = dstr;
+        const list = EVENTS[dstr] || [];
+        const [y,m,d] = dstr.split('-');
+        let html = '<p class="text-sm font-bold text-slate-600 mb-2">'+parseInt(d)+' '+MONTHS[parseInt(m)-1]+' '+y+'</p>';
+        if (!list.length) {
+            html += '<p class="text-sm text-slate-400 text-center py-4">ไม่มีรายการวันนี้</p>';
+        } else {
+            html += '<div class="space-y-1.5">' + list.map(function(e){
+                const color = e.sign==='+' ? 'text-emerald-600' : (e.sign==='-' ? 'text-rose-500' : 'text-slate-700');
+                const amt = e.sign ? (e.sign+fmt(e.amount)) : fmt(e.amount);
+                return '<div class="flex items-center gap-2.5 p-2 rounded-xl bg-slate-50">'
+                  + '<span class="grid place-items-center w-8 h-8 rounded-lg bg-white text-emerald-500 shrink-0"><i data-lucide="'+(ICON[e.icon]||'circle')+'" class="w-4 h-4"></i></span>'
+                  + '<div class="min-w-0 flex-1"><p class="text-sm font-semibold text-slate-700 truncate">'+e.title+'</p>'
+                  + (e.sub ? '<p class="text-xs text-slate-400 truncate">'+e.sub+'</p>' : '') + '</div>'
+                  + '<span class="text-sm font-bold '+color+' shrink-0">'+amt+' ฿</span></div>';
+            }).join('') + '</div>';
+        }
+        dayBox.innerHTML = html;
+        if (window.lucide) lucide.createIcons();
+    }
+
+    function render(){
+        const y = view.getFullYear(), m = view.getMonth();
+        title.textContent = MONTHS[m] + ' ' + y;
+        const first = new Date(y, m, 1).getDay();
+        const days = new Date(y, m+1, 0).getDate();
+        let cells = '';
+        for (let i=0;i<first;i++) cells += '<span></span>';
+        for (let d=1; d<=days; d++){
+            const ds = key(y,m,d);
+            const has = !!EVENTS[ds];
+            const isToday = ds===today, isSel = ds===selected;
+            cells += '<button type="button" data-d="'+ds+'" class="relative aspect-square flex flex-col items-center justify-center rounded-lg text-sm transition '
+                + (isSel ? 'bg-gradient-to-br from-emerald-400 to-teal-500 text-white font-bold shadow' : (isToday ? 'bg-emerald-50 text-emerald-700 font-semibold' : 'text-slate-600 hover:bg-slate-100'))
+                + '">'+d
+                + (has ? '<span class="absolute bottom-1 w-1.5 h-1.5 rounded-full '+(isSel?'bg-white':'bg-emerald-400')+'"></span>' : '')
+                + '</button>';
+        }
+        grid.innerHTML = cells;
+        grid.querySelectorAll('button[data-d]').forEach(function(b){
+            b.addEventListener('click', function(){ renderDay(b.dataset.d); render(); });
+        });
+    }
+
+    document.getElementById('calPrev').addEventListener('click', function(){ view.setMonth(view.getMonth()-1); render(); });
+    document.getElementById('calNext').addEventListener('click', function(){ view.setMonth(view.getMonth()+1); render(); });
+    render();
+    renderDay(today);
+})();
+</script>
 
 <!-- ยอดสุทธิรวมกับเพื่อน -->
 <div class="flex items-center justify-between mb-1">
