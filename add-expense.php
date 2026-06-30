@@ -23,12 +23,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($title === '' || $total <= 0 || empty($picked) || $paid_by <= 0) {
         $status_msg = 'กรุณากรอกชื่อรายการ ยอดเงิน และเลือกผู้ร่วมหารอย่างน้อย 1 คน';
     } else {
-        list($splits, $err) = compute_splits($mode, $total, $picked, $amounts);
-        if ($err) {
-            $status_msg = $err;
+        list($splits, $err)        = compute_splits($mode, $total, $picked, $amounts);
+        list($receiptUrl, $upErr)  = $err ? [null, null] : handle_receipt_upload('receipt');
+        if ($err || $upErr) {
+            $status_msg = $err ?: $upErr;
         } else {
             $res = sb_insert('expenses', [
                 'title' => $title, 'total_amount' => $total, 'paid_by' => $paid_by,
+                'receipt_url' => $receiptUrl,
             ]);
             $expense_id = $res['body'][0]['id'] ?? null;
 
@@ -71,7 +73,7 @@ layout_head('เพิ่มรายจ่าย', 'add-expense.php');
             </div>
         <?php endif; ?>
 
-    <form method="POST" class="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-5" id="expenseForm">
+    <form method="POST" enctype="multipart/form-data" class="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-5" id="expenseForm">
         <!-- ชื่อรายการ -->
         <div>
             <label class="block text-sm font-semibold text-slate-600 mb-1.5">ค่าอะไร?</label>
@@ -149,6 +151,18 @@ layout_head('เพิ่มรายจ่าย', 'add-expense.php');
             </div>
         </div>
 
+        <!-- แนบรูปใบเสร็จ -->
+        <div>
+            <label class="block text-sm font-semibold text-slate-600 mb-1.5">แนบรูปใบเสร็จ <span class="text-slate-400 font-normal">(ไม่บังคับ · ไม่เกิน 5MB)</span></label>
+            <input type="file" name="receipt" id="receipt" accept="image/*" class="hidden">
+            <label for="receipt" id="receiptDrop"
+                   class="flex flex-col items-center justify-center gap-2 p-5 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 hover:border-emerald-400 hover:text-emerald-500 cursor-pointer transition">
+                <i data-lucide="camera" class="w-7 h-7"></i>
+                <span id="receiptHint" class="text-sm">แตะเพื่อถ่าย/เลือกรูปใบเสร็จ</span>
+                <img id="receiptPreview" class="hidden max-h-56 rounded-lg shadow-sm" alt="preview">
+            </label>
+        </div>
+
         <button type="submit" id="submitBtn"
                 class="w-full bg-gradient-to-br from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white font-bold py-3 rounded-xl shadow-lg shadow-emerald-200 transition flex items-center justify-center gap-2">
             <i data-lucide="check-circle" class="w-5 h-5"></i> บันทึกและหารยอด
@@ -158,5 +172,20 @@ layout_head('เพิ่มรายจ่าย', 'add-expense.php');
 </div>
 
 <script src="split-editor.js"></script>
+<script>
+(function () {
+    const inp = document.getElementById('receipt');
+    if (!inp) return;
+    const img = document.getElementById('receiptPreview');
+    const hint = document.getElementById('receiptHint');
+    inp.addEventListener('change', function () {
+        const f = this.files && this.files[0];
+        if (!f) { img.classList.add('hidden'); hint.textContent = 'แตะเพื่อถ่าย/เลือกรูปใบเสร็จ'; return; }
+        img.src = URL.createObjectURL(f);
+        img.classList.remove('hidden');
+        hint.textContent = 'แตะเพื่อเปลี่ยนรูป';
+    });
+})();
+</script>
 
 <?php layout_foot(); ?>

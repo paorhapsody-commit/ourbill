@@ -31,12 +31,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $status_msg = 'กรุณากรอกข้อมูลให้ครบถ้วน';
         } else {
             list($splits, $err) = compute_splits($mode, $total, $picked, $amounts);
-            if ($err) {
-                $status_msg = $err;
+            // รูปใบเสร็จ: ลบ / เปลี่ยนรูปใหม่ / คงเดิม
+            $exUpdate = ['title' => $title, 'total_amount' => $total, 'paid_by' => $paid_by];
+            $upErr = null;
+            if (!empty($_POST['remove_receipt'])) {
+                $exUpdate['receipt_url'] = null;
+            } elseif (!$err) {
+                list($rurl, $upErr) = handle_receipt_upload('receipt');
+                if ($rurl !== null) $exUpdate['receipt_url'] = $rurl;
+            }
+
+            if ($err || $upErr) {
+                $status_msg = $err ?: $upErr;
             } else {
-                sb_update('expenses?id=eq.' . $id, [
-                    'title' => $title, 'total_amount' => $total, 'paid_by' => $paid_by,
-                ]);
+                sb_update('expenses?id=eq.' . $id, $exUpdate);
                 sb_delete('expense_splits?expense_id=eq.' . $id);
                 $payload = [];
                 foreach ($splits as $uid => $amt) {
@@ -117,6 +125,15 @@ layout_head('รายละเอียดรายจ่าย', '');
         </div>
     </div>
 
+    <!-- รูปใบเสร็จ -->
+    <?php if (!empty($exp['receipt_url'])): ?>
+        <h2 class="text-sm font-bold text-slate-500 mb-2 px-1 flex items-center gap-1.5"><i data-lucide="receipt-text" class="w-4 h-4"></i> ใบเสร็จ</h2>
+        <a href="<?= htmlspecialchars($exp['receipt_url']) ?>" target="_blank" class="block mb-6">
+            <img src="<?= htmlspecialchars($exp['receipt_url']) ?>" alt="ใบเสร็จ"
+                 class="w-full max-h-96 object-contain rounded-2xl border border-slate-100 shadow-sm bg-white">
+        </a>
+    <?php endif; ?>
+
     <!-- รายการหาร -->
     <h2 class="text-sm font-bold text-slate-500 mb-2 px-1">หารกัน <?= count($splits) ?> คน</h2>
     <div class="bg-white rounded-2xl border border-slate-100 shadow-sm divide-y divide-slate-50 mb-6">
@@ -145,7 +162,7 @@ layout_head('รายละเอียดรายจ่าย', '');
 
     <!-- แผงแก้ไข (ซ่อนไว้) -->
     <div id="editPanel" class="hidden mt-5">
-        <form method="POST" class="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-5" id="expenseForm">
+        <form method="POST" enctype="multipart/form-data" class="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-5" id="expenseForm">
             <input type="hidden" name="action" value="edit">
             <h3 class="font-bold text-slate-700 flex items-center gap-2"><i data-lucide="pencil" class="w-4 h-4 text-emerald-500"></i> แก้ไขรายการ</h3>
 
@@ -211,6 +228,24 @@ layout_head('รายละเอียดรายจ่าย', '');
                     <span id="sumLabel" class="text-emerald-600"></span>
                 </div>
             </div>
+
+            <!-- รูปใบเสร็จ -->
+            <div>
+                <label class="block text-sm font-semibold text-slate-600 mb-1.5">รูปใบเสร็จ</label>
+                <input type="file" name="receipt" id="receiptEdit" accept="image/*" class="hidden">
+                <label for="receiptEdit" class="flex flex-col items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 hover:border-emerald-400 hover:text-emerald-500 cursor-pointer transition">
+                    <i data-lucide="camera" class="w-6 h-6"></i>
+                    <span id="receiptHintEdit" class="text-sm"><?= !empty($exp['receipt_url']) ? 'แตะเพื่อเปลี่ยนรูป' : 'แตะเพื่อแนบรูป' ?></span>
+                    <img id="receiptPreviewEdit" src="<?= htmlspecialchars($exp['receipt_url'] ?? '') ?>" class="<?= !empty($exp['receipt_url']) ? '' : 'hidden' ?> max-h-48 rounded-lg shadow-sm" alt="preview">
+                </label>
+                <?php if (!empty($exp['receipt_url'])): ?>
+                    <label class="flex items-center gap-2 mt-2 text-sm text-slate-500 cursor-pointer">
+                        <input type="checkbox" name="remove_receipt" value="1" class="w-4 h-4 text-rose-500 border-slate-300 rounded focus:ring-rose-400">
+                        ลบรูปใบเสร็จออก
+                    </label>
+                <?php endif; ?>
+            </div>
+
             <button type="submit" id="submitBtn"
                     class="w-full bg-gradient-to-br from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white font-bold py-3 rounded-xl shadow-lg shadow-emerald-200 transition flex items-center justify-center gap-2">
                 <i data-lucide="save" class="w-5 h-5"></i> บันทึกการแก้ไข
@@ -220,4 +255,19 @@ layout_head('รายละเอียดรายจ่าย', '');
 </div>
 
 <script src="split-editor.js"></script>
+<script>
+(function () {
+    const inp = document.getElementById('receiptEdit');
+    if (!inp) return;
+    const img = document.getElementById('receiptPreviewEdit');
+    const hint = document.getElementById('receiptHintEdit');
+    inp.addEventListener('change', function () {
+        const f = this.files && this.files[0];
+        if (!f) return;
+        img.src = URL.createObjectURL(f);
+        img.classList.remove('hidden');
+        hint.textContent = 'แตะเพื่อเปลี่ยนรูป';
+    });
+})();
+</script>
 <?php layout_foot(); ?>

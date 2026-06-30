@@ -139,9 +139,13 @@ layout_head('หน้าหลัก', 'index.php');
     <?php else: foreach ($ledger as $item): ?>
         <a href="expense.php?id=<?= $item['id'] ?>"
            class="flex items-center gap-3 p-4 border-b border-slate-50 last:border-0 hover:bg-emerald-50/40 transition">
-            <span class="grid place-items-center w-10 h-10 rounded-xl bg-emerald-50 text-emerald-500 shrink-0">
-                <i data-lucide="shopping-bag" class="w-5 h-5"></i>
-            </span>
+            <?php if (!empty($item['receipt_url'])): ?>
+                <img src="<?= htmlspecialchars($item['receipt_url']) ?>" alt="" class="w-10 h-10 rounded-xl object-cover shrink-0 border border-slate-100">
+            <?php else: ?>
+                <span class="grid place-items-center w-10 h-10 rounded-xl bg-emerald-50 text-emerald-500 shrink-0">
+                    <i data-lucide="shopping-bag" class="w-5 h-5"></i>
+                </span>
+            <?php endif; ?>
             <div class="min-w-0">
                 <p class="font-semibold text-slate-800 truncate"><?= htmlspecialchars($item['title']) ?></p>
                 <p class="text-xs text-slate-400">

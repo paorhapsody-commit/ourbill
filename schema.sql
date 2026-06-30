@@ -170,3 +170,19 @@ CREATE TABLE IF NOT EXISTS friendships (
 ALTER TABLE friendships ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS allow_all ON friendships;
 CREATE POLICY allow_all ON friendships FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+-- =========================================================
+--  10. แนบรูปใบเสร็จในรายจ่าย (Supabase Storage)
+-- =========================================================
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS receipt_url TEXT;
+
+-- สร้าง bucket "receipts" แบบ public (เปิดดูรูปผ่าน URL ได้)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('receipts', 'receipts', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- อนุญาต anon อ่าน/อัปโหลดไฟล์ในบัคเก็ตนี้
+DROP POLICY IF EXISTS receipts_read   ON storage.objects;
+DROP POLICY IF EXISTS receipts_insert ON storage.objects;
+CREATE POLICY receipts_read   ON storage.objects FOR SELECT TO anon, authenticated USING (bucket_id = 'receipts');
+CREATE POLICY receipts_insert ON storage.objects FOR INSERT TO anon, authenticated WITH CHECK (bucket_id = 'receipts');

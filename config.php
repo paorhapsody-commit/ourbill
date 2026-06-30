@@ -70,6 +70,62 @@ function sb_upsert($table, $rows, $on_conflict, $token = null) {
 }
 
 /* =========================================================
+ *  Supabase Storage (อัปโหลดรูป)
+ * ========================================================= */
+
+/** อัปโหลดไฟล์ขึ้น bucket */
+function sb_upload_file($bucket, $path, $tmpFile, $mime) {
+    $url = SUPABASE_URL . '/storage/v1/object/' . $bucket . '/' . rawurlencode($path);
+    $ch  = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_HTTPHEADER     => [
+            'apikey: ' . SUPABASE_KEY,
+            'Authorization: Bearer ' . SUPABASE_KEY,
+            'Content-Type: ' . $mime,
+            'x-upsert: true',
+        ],
+        CURLOPT_POSTFIELDS     => file_get_contents($tmpFile),
+    ]);
+    $res    = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return ['status' => (int) $status, 'body' => json_decode($res, true)];
+}
+
+/** URL สาธารณะของไฟล์ในบัคเก็ต public */
+function sb_public_url($bucket, $path) {
+    return SUPABASE_URL . '/storage/v1/object/public/' . $bucket . '/' . rawurlencode($path);
+}
+
+/**
+ * รับไฟล์รูปจากฟอร์ม -> อัปโหลด -> คืน [public_url, error]
+ * ไม่มีไฟล์แนบ = [null, null] (ไม่ถือเป็น error)
+ */
+function handle_receipt_upload($field = 'receipt') {
+    if (empty($_FILES[$field]) || ($_FILES[$field]['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        return [null, null];
+    }
+    $f = $_FILES[$field];
+    if ($f['error'] !== UPLOAD_ERR_OK)  return [null, 'อัปโหลดรูปไม่สำเร็จ (error ' . $f['error'] . ')'];
+    if ($f['size'] > 5 * 1024 * 1024)   return [null, 'รูปต้องมีขนาดไม่เกิน 5MB'];
+
+    $allowed = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif'];
+    $mime = function_exists('finfo_open')
+        ? (new finfo(FILEINFO_MIME_TYPE))->file($f['tmp_name'])
+        : ($f['type'] ?? '');
+    if (!isset($allowed[$mime])) return [null, 'รองรับเฉพาะไฟล์รูป (JPG/PNG/WEBP/GIF)'];
+
+    $name = 'rcpt_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $allowed[$mime];
+    $res  = sb_upload_file('receipts', $name, $f['tmp_name'], $mime);
+    if ($res['status'] < 200 || $res['status'] >= 300) {
+        return [null, 'อัปโหลดรูปขึ้น Storage ไม่สำเร็จ (HTTP ' . $res['status'] . ') — ตรวจว่าได้สร้าง bucket "receipts" + policy แล้ว'];
+    }
+    return [sb_public_url('receipts', $name), null];
+}
+
+/* =========================================================
  *  Settings (อ่านค่าตั้งค่าจากตาราง settings)
  * ========================================================= */
 function app_settings($refresh = false) {
