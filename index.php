@@ -4,23 +4,17 @@ require_login();
 require_once 'config.php';
 require_once '_layout.php';
 
-$balances = sb_get('user_balances?order=balance.desc') ?: [];
-// แสดงเฉพาะคนที่มีกิจกรรมจริง (ไม่โชว์สมาชิกที่เพิ่งล็อกอินแต่ยังไม่มีบิล)
-$balances = array_values(array_filter($balances, fn($b) =>
-    (float) $b['paid_amount'] > 0 || (float) $b['owed_amount'] > 0
-    || (float) $b['settled_paid'] > 0 || (float) $b['settled_received'] > 0));
-$ledger   = sb_get('expenses?select=*,users(name)&order=created_at.desc&limit=8') ?: [];
-$settle   = calculate_settlements($balances);
-
-// สรุปยอดรวม
-$total_volume = 0;
-foreach ($balances as $b) { $total_volume += (float) $b['paid_amount']; }
-$total_outstanding = 0;
-foreach ($settle as $t) { $total_outstanding += $t['amount']; }
-
-// เงินเพื่อนที่เราถือไว้
 $myMember = (int) ($_SESSION['user']['member_id'] ?? 0);
-$held = 0;
+$friends  = unified_balances($myMember);   // ยอดสุทธิรวมทุกฟังก์ชัน ต่อเพื่อน
+$ledger   = sb_get('expenses?select=*,users(name)&order=created_at.desc&limit=8') ?: [];
+
+// สรุปจากมุมของเรา
+$owedToMe = 0; $iOwe = 0; $installRecv = 0; $held = 0;
+foreach ($friends as $f) {
+    if ($f['net'] > 0.009)      $owedToMe += $f['net'];
+    elseif ($f['net'] < -0.009) $iOwe     += -$f['net'];
+    if ($f['installment'] > 0)  $installRecv += $f['installment'];
+}
 if ($myMember) {
     foreach (sb_rows(sb_get('holdings?holder_id=eq.' . $myMember . '&select=amount')) as $h) {
         $held += (float) $h['amount'];
@@ -30,116 +24,88 @@ if ($myMember) {
 layout_head('หน้าหลัก', 'index.php');
 ?>
 
-<!-- Summary stat cards -->
-<div class="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4 mb-7">
+<!-- Summary stat cards (มุมของเรา) -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-7">
     <div class="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
         <div class="flex items-center gap-2 text-slate-400 text-xs font-medium mb-1.5">
-            <i data-lucide="banknote" class="w-4 h-4"></i> ใช้จ่ายรวมทั้งกลุ่ม
+            <i data-lucide="trending-up" class="w-4 h-4"></i> เพื่อนติดเรา
         </div>
-        <p class="text-2xl font-extrabold text-slate-800"><?= baht($total_volume) ?> <span class="text-sm font-medium text-slate-400">฿</span></p>
-    </div>
-    <div class="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
-        <div class="flex items-center gap-2 text-slate-400 text-xs font-medium mb-1.5">
-            <i data-lucide="hourglass" class="w-4 h-4"></i> หนี้ที่ยังค้าง
-        </div>
-        <p class="text-2xl font-extrabold <?= $total_outstanding > 0 ? 'text-rose-500' : 'text-emerald-500' ?>"><?= baht($total_outstanding) ?> <span class="text-sm font-medium text-slate-400">฿</span></p>
+        <p class="text-2xl font-extrabold text-emerald-600"><?= baht($owedToMe) ?> <span class="text-sm font-medium text-slate-400">฿</span></p>
     </div>
     <div class="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
         <div class="flex items-center gap-2 text-slate-400 text-xs font-medium mb-1.5">
-            <i data-lucide="users" class="w-4 h-4"></i> สมาชิกในกลุ่ม
+            <i data-lucide="trending-down" class="w-4 h-4"></i> เราติดเพื่อน
         </div>
-        <p class="text-2xl font-extrabold text-slate-800"><?= count($balances) ?> <span class="text-sm font-medium text-slate-400">คน</span></p>
+        <p class="text-2xl font-extrabold text-rose-500"><?= baht($iOwe) ?> <span class="text-sm font-medium text-slate-400">฿</span></p>
     </div>
-    <div class="bg-gradient-to-br from-emerald-400 to-teal-500 rounded-2xl p-4 shadow-lg shadow-emerald-200 text-white">
-        <div class="flex items-center gap-2 text-emerald-50 text-xs font-medium mb-1.5">
-            <i data-lucide="arrow-right-left" class="w-4 h-4"></i> รายการต้องโอน
-        </div>
-        <p class="text-2xl font-extrabold"><?= count($settle) ?> <span class="text-sm font-medium text-emerald-100">รายการ</span></p>
-    </div>
-    <a href="holdings.php" class="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm hover:shadow-md transition col-span-2 lg:col-span-1">
+    <a href="holdings.php" class="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm hover:shadow-md transition">
         <div class="flex items-center gap-2 text-slate-400 text-xs font-medium mb-1.5">
             <i data-lucide="piggy-bank" class="w-4 h-4"></i> เงินเพื่อนที่ถือไว้
         </div>
         <p class="text-2xl font-extrabold text-slate-800"><?= baht($held) ?> <span class="text-sm font-medium text-slate-400">฿</span></p>
     </a>
-</div>
-
-<!-- Balances -->
-<div class="flex items-center justify-between mb-4">
-    <h2 class="text-lg font-bold text-slate-700 flex items-center gap-2">
-        <i data-lucide="scale" class="w-5 h-5 text-emerald-500"></i> สถานะดุลเงินของแต่ละคน
-    </h2>
-    <a href="add-expense.php" class="md:hidden text-sm font-semibold text-emerald-600 flex items-center gap-1">
-        <i data-lucide="plus" class="w-4 h-4"></i> เพิ่ม
+    <a href="installments.php" class="bg-gradient-to-br from-emerald-400 to-teal-500 rounded-2xl p-4 shadow-lg shadow-emerald-200 text-white hover:from-emerald-500 hover:to-teal-600 transition">
+        <div class="flex items-center gap-2 text-emerald-50 text-xs font-medium mb-1.5">
+            <i data-lucide="calendar-clock" class="w-4 h-4"></i> ผ่อนค้างรับ
+        </div>
+        <p class="text-2xl font-extrabold"><?= baht($installRecv) ?> <span class="text-sm font-medium text-emerald-100">฿</span></p>
     </a>
 </div>
 
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-    <?php if (empty($balances)): ?>
-        <div class="col-span-full bg-white rounded-2xl p-8 text-center text-slate-400 border border-dashed border-slate-200">
-            ยังไม่มีสมาชิก — <a href="friends.php" class="text-emerald-600 font-semibold">เพิ่มเพื่อนก่อน</a>
+<!-- ยอดสุทธิรวมกับเพื่อน -->
+<div class="flex items-center justify-between mb-1">
+    <h2 class="text-lg font-bold text-slate-700 flex items-center gap-2">
+        <i data-lucide="scale" class="w-5 h-5 text-emerald-500"></i> ยอดสุทธิกับเพื่อน
+    </h2>
+    <a href="settle.php" class="text-sm font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1">
+        เคลียร์หนี้ <i data-lucide="chevron-right" class="w-4 h-4"></i>
+    </a>
+</div>
+<p class="text-xs text-slate-400 mb-4">รวมทุกอย่าง: หารบิล + เคลียร์หนี้ + เงินที่ถือไว้ + ผ่อนรายเดือน</p>
+
+<div class="space-y-2 mb-8">
+    <?php if (empty($friends)): ?>
+        <div class="bg-white rounded-2xl p-8 text-center text-slate-400 border border-dashed border-slate-200">
+            ยังไม่มียอดกับเพื่อน — <a href="add-expense.php" class="text-emerald-600 font-semibold">เพิ่มรายจ่าย</a> หรือ <a href="friends.php" class="text-emerald-600 font-semibold">เพิ่มเพื่อน</a>
         </div>
     <?php endif; ?>
 
-    <?php foreach ($balances as $u):
-        $bal = (float) $u['balance']; ?>
-        <div class="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition">
-            <div class="flex items-center gap-3 mb-4">
-                <?= avatar($u['id'], $u['name'], 'w-11 h-11 text-base') ?>
-                <div>
-                    <h3 class="font-bold text-slate-800 leading-tight"><?= htmlspecialchars($u['name']) ?></h3>
-                    <p class="text-xs text-slate-400">สำรองจ่าย <?= baht($u['paid_amount']) ?> ฿</p>
+    <?php foreach ($friends as $f):
+        $net  = (float) $f['net'];
+        $bill = $f['bill'] + $f['settle'];
+        $chips = [
+            ['label' => 'บิล',     'val' => $bill],
+            ['label' => 'ถือเงิน', 'val' => $f['holding']],
+            ['label' => 'ผ่อน',    'val' => $f['installment']],
+        ]; ?>
+        <a href="friend.php?id=<?= $f['id'] ?>" class="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center gap-3 hover:border-emerald-200 hover:shadow-md transition">
+            <?= avatar($f['id'], $f['name'], 'w-11 h-11 text-base') ?>
+            <div class="min-w-0 flex-1">
+                <p class="font-bold text-slate-800 truncate"><?= htmlspecialchars($f['name']) ?></p>
+                <div class="flex flex-wrap gap-1 mt-1">
+                    <?php foreach ($chips as $c): if (abs($c['val']) < 0.009) continue; ?>
+                        <span class="text-[11px] px-1.5 py-0.5 rounded <?= $c['val'] >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-500' ?>">
+                            <?= $c['label'] ?> <?= $c['val'] >= 0 ? '+' : '−' ?><?= baht(abs($c['val'])) ?>
+                        </span>
+                    <?php endforeach; ?>
                 </div>
             </div>
-
-            <?php if ($bal > 0.009): ?>
-                <p class="text-xs text-slate-400 mb-0.5">ยอดสุทธิ · รอรับเงินคืน</p>
-                <p class="text-2xl font-black text-emerald-600">+<?= baht($bal) ?> ฿</p>
-                <span class="inline-flex items-center gap-1 text-xs bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full font-medium mt-2.5">
-                    <i data-lucide="trending-up" class="w-3.5 h-3.5"></i> เป็นเจ้าหนี้
-                </span>
-            <?php elseif ($bal < -0.009): ?>
-                <p class="text-xs text-slate-400 mb-0.5">ยอดสุทธิ · ต้องจ่ายคืน</p>
-                <p class="text-2xl font-black text-rose-500"><?= baht($bal) ?> ฿</p>
-                <span class="inline-flex items-center gap-1 text-xs bg-rose-50 text-rose-600 px-2.5 py-1 rounded-full font-medium mt-2.5">
-                    <i data-lucide="trending-down" class="w-3.5 h-3.5"></i> เป็นลูกหนี้
-                </span>
-            <?php else: ?>
-                <p class="text-xs text-slate-400 mb-0.5">ยอดสุทธิ</p>
-                <p class="text-2xl font-black text-slate-400">0.00 ฿</p>
-                <span class="inline-flex items-center gap-1 text-xs bg-slate-100 text-slate-500 px-2.5 py-1 rounded-full font-medium mt-2.5">
-                    <i data-lucide="check" class="w-3.5 h-3.5"></i> เคลียร์แล้ว
-                </span>
-            <?php endif; ?>
-        </div>
+            <div class="text-right shrink-0">
+                <?php if ($net > 0.009): ?>
+                    <p class="text-xl font-black text-emerald-600">+<?= baht($net) ?> ฿</p>
+                    <p class="text-[11px] text-emerald-600 font-medium">เพื่อนติดเรา</p>
+                <?php elseif ($net < -0.009): ?>
+                    <p class="text-xl font-black text-rose-500"><?= baht($net) ?> ฿</p>
+                    <p class="text-[11px] text-rose-500 font-medium">เราติดเพื่อน</p>
+                <?php else: ?>
+                    <p class="text-xl font-black text-slate-400">0.00 ฿</p>
+                    <p class="text-[11px] text-slate-400 font-medium">เคลียร์แล้ว</p>
+                <?php endif; ?>
+            </div>
+            <i data-lucide="chevron-right" class="w-4 h-4 text-slate-300 shrink-0"></i>
+        </a>
     <?php endforeach; ?>
 </div>
-
-<!-- Settle-up preview -->
-<?php if (!empty($settle)): ?>
-<div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden mb-8">
-    <div class="flex items-center justify-between p-5 bg-gradient-to-r from-emerald-50 to-teal-50 border-b border-slate-100">
-        <h2 class="text-base font-bold text-slate-700 flex items-center gap-2">
-            <i data-lucide="sparkles" class="w-5 h-5 text-emerald-500"></i> วิธีเคลียร์หนี้ที่แนะนำ
-        </h2>
-        <a href="settle.php" class="text-sm font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1">
-            ดูทั้งหมด <i data-lucide="chevron-right" class="w-4 h-4"></i>
-        </a>
-    </div>
-    <div class="divide-y divide-slate-50">
-        <?php foreach (array_slice($settle, 0, 3) as $t): ?>
-            <div class="flex items-center gap-3 p-4">
-                <?= avatar($t['from_id'], $t['from'], 'w-9 h-9 text-sm') ?>
-                <span class="font-semibold text-slate-700 text-sm"><?= htmlspecialchars($t['from']) ?></span>
-                <i data-lucide="arrow-right" class="w-4 h-4 text-slate-300 shrink-0"></i>
-                <?= avatar($t['to_id'], $t['to'], 'w-9 h-9 text-sm') ?>
-                <span class="font-semibold text-slate-700 text-sm"><?= htmlspecialchars($t['to']) ?></span>
-                <span class="ml-auto font-bold text-emerald-600"><?= baht($t['amount']) ?> ฿</span>
-            </div>
-        <?php endforeach; ?>
-    </div>
-</div>
-<?php endif; ?>
 
 <!-- Recent expenses -->
 <div class="flex items-center justify-between mb-4">

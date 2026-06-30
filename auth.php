@@ -183,6 +183,151 @@ function selectable_members($accountId) {
     return sb_rows($rows);
 }
 
+/**
+ * ยอดสุทธิรวมทุกฟังก์ชัน ระหว่างเรากับเพื่อนแต่ละคน (จากมุมของ $myMember)
+ * รวม: หารบิล + เคลียร์หนี้ + เงินเพื่อนที่ถือไว้ + ผ่อนรายเดือน
+ * คืน array: fid => [id, name, bill, settle, holding, installment, net]
+ *   net > 0 = เพื่อนติดเรา (รอรับ) | net < 0 = เราติดเพื่อน (ต้องจ่าย)
+ */
+function unified_balances($myMember) {
+    $myMember = (int) $myMember;
+    if ($myMember <= 0) return [];
+    $net = [];
+    $touch = function (&$net, $fid) {
+        $fid = (int) $fid;
+        if (!isset($net[$fid])) $net[$fid] = ['bill' => 0, 'settle' => 0, 'holding' => 0, 'installment' => 0];
+        return $fid;
+    };
+
+    // (A) บิลที่เราจ่ายก่อน -> เพื่อนติดเราตามส่วนหาร
+    foreach (sb_rows(sb_get('expenses?paid_by=eq.' . $myMember . '&select=id,expense_splits(user_id,amount)')) as $e) {
+        foreach (($e['expense_splits'] ?? []) as $s) {
+            if ((int) $s['user_id'] === $myMember) continue;
+            $f = $touch($net, $s['user_id']);
+            $net[$f]['bill'] += (float) $s['amount'];
+        }
+    }
+    // (B) ส่วนหารของเราในบิลที่เพื่อนจ่ายก่อน -> เราติดเพื่อน
+    foreach (sb_rows(sb_get('expense_splits?user_id=eq.' . $myMember . '&select=amount,expenses(paid_by)')) as $s) {
+        $p = (int) ($s['expenses']['paid_by'] ?? 0);
+        if ($p <= 0 || $p === $myMember) continue;
+        $f = $touch($net, $p);
+        $net[$f]['bill'] -= (float) $s['amount'];
+    }
+    // เคลียร์หนี้ (settlements)
+    foreach (sb_rows(sb_get('settlements?or=(from_user.eq.' . $myMember . ',to_user.eq.' . $myMember . ')&select=from_user,to_user,amount')) as $st) {
+        $from = (int) $st['from_user']; $to = (int) $st['to_user']; $amt = (float) $st['amount'];
+        if ($from === $myMember && $to !== $myMember) { $f = $touch($net, $to);   $net[$f]['settle'] += $amt; } // เราจ่ายคืนเพื่อน -> ลดที่เราติด
+        if ($to === $myMember && $from !== $myMember) { $f = $touch($net, $from); $net[$f]['settle'] -= $amt; } // เพื่อนจ่ายคืนเรา -> ลดที่เพื่อนติด
+    }
+    // เงินเพื่อนที่ถือไว้ (holdings)
+    foreach (sb_rows(sb_get('holdings?or=(holder_id.eq.' . $myMember . ',owner_id.eq.' . $myMember . ')&select=holder_id,owner_id,amount')) as $h) {
+        $hd = (int) $h['holder_id']; $ow = (int) $h['owner_id']; $amt = (float) $h['amount'];
+        if ($hd === $myMember && $ow !== $myMember) { $f = $touch($net, $ow); $net[$f]['holding'] -= $amt; } // เราถือเงินเพื่อน -> เราติดเพื่อน
+        if ($ow === $myMember && $hd !== $myMember) { $f = $touch($net, $hd); $net[$f]['holding'] += $amt; } // เพื่อนถือเงินเรา -> เพื่อนติดเรา
+    }
+    // ผ่อนรายเดือน (installments) -> ยอดคงเหลือ
+    $plans = sb_rows(sb_get('installments?or=(payee_id.eq.' . $myMember . ',payer_id.eq.' . $myMember . ')&select=id,payer_id,payee_id,monthly_amount,months'));
+    if ($plans) {
+        $ids  = implode(',', array_map(fn($p) => (int) $p['id'], $plans));
+        $paid = [];
+        foreach (sb_rows(sb_get('installment_payments?installment_id=in.(' . $ids . ')&select=installment_id,amount')) as $pm) {
+            $paid[(int) $pm['installment_id']] = ($paid[(int) $pm['installment_id']] ?? 0) + (float) $pm['amount'];
+        }
+        foreach ($plans as $p) {
+            $remain = max(0, (float) $p['monthly_amount'] * (int) $p['months'] - ($paid[(int) $p['id']] ?? 0));
+            $payer = (int) $p['payer_id']; $payee = (int) $p['payee_id'];
+            if ($payee === $myMember && $payer !== $myMember) { $f = $touch($net, $payer); $net[$f]['installment'] += $remain; } // เพื่อนผ่อนให้เรา
+            if ($payer === $myMember && $payee !== $myMember) { $f = $touch($net, $payee); $net[$f]['installment'] -= $remain; } // เราผ่อนให้เพื่อน
+        }
+    }
+
+    if (empty($net)) return [];
+    // ชื่อสมาชิก
+    $names = [];
+    foreach (sb_rows(sb_get('users?id=in.(' . implode(',', array_keys($net)) . ')&select=id,name')) as $u) {
+        $names[(int) $u['id']] = $u['name'];
+    }
+    $out = [];
+    foreach ($net as $fid => $b) {
+        $out[$fid] = $b + [
+            'id'   => $fid,
+            'name' => $names[$fid] ?? ('#' . $fid),
+            'net'  => round($b['bill'] + $b['settle'] + $b['holding'] + $b['installment'], 2),
+        ];
+    }
+    uasort($out, fn($a, $z) => abs($z['net']) <=> abs($a['net']));
+    return $out;
+}
+
+/**
+ * ไทม์ไลน์รวมทุกธุรกรรมระหว่างเรากับเพื่อนคนเดียว (บิล + เคลียร์ + ถือเงิน + ผ่อน)
+ * คืน list เรียงใหม่ล่าสุดก่อน: [ts, icon, title, sub, impact]
+ *   impact > 0 = ทำให้ "เพื่อนติดเรา" มากขึ้น | impact < 0 = ทำให้ "เราติดเพื่อน" มากขึ้น
+ */
+function friend_timeline($myMember, $friendId) {
+    $me = (int) $myMember; $fr = (int) $friendId;
+    if ($me <= 0 || $fr <= 0 || $me === $fr) return [];
+    $ev = [];
+
+    // (1) บิลที่เราจ่ายก่อน + เพื่อนมีส่วนหาร -> เพื่อนติดเรา
+    foreach (sb_rows(sb_get('expenses?paid_by=eq.' . $me . '&select=id,title,created_at,expense_splits(user_id,amount)')) as $e) {
+        foreach (($e['expense_splits'] ?? []) as $s) {
+            if ((int) $s['user_id'] !== $fr) continue;
+            $ev[] = ['ts' => $e['created_at'] ?? '', 'icon' => 'receipt', 'title' => 'บิล: ' . ($e['title'] ?? '-'),
+                     'sub' => 'เราจ่ายก่อน · ส่วนแบ่งของเพื่อน', 'impact' => (float) $s['amount']];
+        }
+    }
+    // (2) บิลที่เพื่อนจ่ายก่อน + เรามีส่วนหาร -> เราติดเพื่อน
+    foreach (sb_rows(sb_get('expense_splits?user_id=eq.' . $me . '&select=amount,expenses(id,title,created_at,paid_by)')) as $s) {
+        if ((int) ($s['expenses']['paid_by'] ?? 0) !== $fr) continue;
+        $ev[] = ['ts' => $s['expenses']['created_at'] ?? '', 'icon' => 'receipt', 'title' => 'บิล: ' . ($s['expenses']['title'] ?? '-'),
+                 'sub' => 'เพื่อนจ่ายก่อน · ส่วนแบ่งของเรา', 'impact' => -(float) $s['amount']];
+    }
+    // (3) เคลียร์หนี้ (settlements)
+    foreach (sb_rows(sb_get('settlements?select=from_user,to_user,amount,note,created_at'
+            . '&or=(and(from_user.eq.' . $me . ',to_user.eq.' . $fr . '),and(from_user.eq.' . $fr . ',to_user.eq.' . $me . '))')) as $st) {
+        $amt = (float) $st['amount']; $iPaid = (int) $st['from_user'] === $me;
+        $ev[] = ['ts' => $st['created_at'] ?? '', 'icon' => 'arrow-right-left', 'title' => 'เคลียร์หนี้',
+                 'sub' => $iPaid ? 'เราโอนคืนเพื่อน' : 'เพื่อนโอนคืนเรา', 'impact' => $iPaid ? $amt : -$amt];
+    }
+    // (4) เงินที่ถือไว้ (holdings)
+    foreach (sb_rows(sb_get('holdings?select=holder_id,owner_id,amount,note,created_at'
+            . '&or=(and(holder_id.eq.' . $me . ',owner_id.eq.' . $fr . '),and(holder_id.eq.' . $fr . ',owner_id.eq.' . $me . '))')) as $h) {
+        $amt = (float) $h['amount']; $weHold = (int) $h['holder_id'] === $me;
+        // เราถือเงินเพื่อน (amt>0) = เราติดเพื่อน (impact -) ; เพื่อนถือเงินเรา = เพื่อนติดเรา (impact +)
+        $impact = $weHold ? -$amt : $amt;
+        $sub = $weHold ? ($amt >= 0 ? 'รับเงินเพื่อนมาถือ' : 'คืนเงินให้เพื่อน')
+                       : ($amt >= 0 ? 'เพื่อนถือเงินเรา' : 'เพื่อนคืนเงินเรา');
+        $ev[] = ['ts' => $h['created_at'] ?? '', 'icon' => 'piggy-bank', 'title' => 'เงินที่ถือไว้', 'sub' => $sub, 'impact' => $impact];
+    }
+    // (5) ผ่อนรายเดือน: เริ่มแผน + การจ่ายแต่ละงวด
+    $plans = sb_rows(sb_get('installments?select=id,title,monthly_amount,months,payer_id,payee_id,created_at'
+            . '&or=(and(payee_id.eq.' . $me . ',payer_id.eq.' . $fr . '),and(payer_id.eq.' . $me . ',payee_id.eq.' . $fr . '))'));
+    if ($plans) {
+        $titleOf = [];
+        foreach ($plans as $p) {
+            $titleOf[(int) $p['id']] = $p['title'];
+            $friendPays = (int) $p['payee_id'] === $me;            // เพื่อนผ่อนให้เรา
+            $total = (float) $p['monthly_amount'] * (int) $p['months'];
+            $ev[] = ['ts' => $p['created_at'] ?? '', 'icon' => 'calendar-clock', 'title' => 'เริ่มแผนผ่อน: ' . $p['title'],
+                     'sub' => $friendPays ? 'เพื่อนจะผ่อนให้เรา' : 'เราจะผ่อนให้เพื่อน', 'impact' => $friendPays ? $total : -$total];
+        }
+        $ids = implode(',', array_map(fn($p) => (int) $p['id'], $plans));
+        $payeeOf = [];
+        foreach ($plans as $p) { $payeeOf[(int) $p['id']] = (int) $p['payee_id']; }
+        foreach (sb_rows(sb_get('installment_payments?installment_id=in.(' . $ids . ')&select=id,installment_id,amount,source,paid_at')) as $pm) {
+            $iid = (int) $pm['installment_id']; $amt = (float) $pm['amount'];
+            $friendPays = ($payeeOf[$iid] ?? 0) === $me;           // เพื่อนเป็นคนผ่อน -> จ่ายลดที่เพื่อนติดเรา (impact -)
+            $ev[] = ['ts' => $pm['paid_at'] ?? '', 'icon' => 'banknote', 'title' => 'จ่ายงวด: ' . ($titleOf[$iid] ?? '-'),
+                     'sub' => $friendPays ? 'เพื่อนจ่ายงวด' : 'เราจ่ายงวดให้เพื่อน', 'impact' => $friendPays ? -$amt : $amt];
+        }
+    }
+
+    usort($ev, fn($a, $z) => strcmp($z['ts'], $a['ts']));
+    return $ev;
+}
+
 /** แลก authorization code เป็น access token */
 function google_exchange_code($code) {
     $ch = curl_init('https://oauth2.googleapis.com/token');
