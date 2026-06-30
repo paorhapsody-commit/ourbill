@@ -210,7 +210,7 @@ layout_head('ผ่อนรายเดือน', 'holdings.php');
             <div class="grid grid-cols-2 gap-2">
                 <div>
                     <label class="block text-[11px] font-semibold text-slate-500 mb-1">จำนวน (฿)</label>
-                    <input type="number" name="amount" step="0.01" min="0.01" value="<?= baht(min($p['monthly_amount'], $remain)) ?>"
+                    <input type="number" name="amount" step="0.01" min="0.01" value="<?= number_format(min((float) $p['monthly_amount'], $remain), 2, '.', '') ?>"
                            class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-bold focus:outline-none focus:ring-2 focus:ring-emerald-400">
                 </div>
                 <div>
