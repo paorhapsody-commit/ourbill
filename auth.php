@@ -264,7 +264,7 @@ function unified_balances($myMember) {
     $net = [];
     $touch = function (&$net, $fid) {
         $fid = (int) $fid;
-        if (!isset($net[$fid])) $net[$fid] = ['bill' => 0, 'settle' => 0, 'holding' => 0, 'installment' => 0];
+        if (!isset($net[$fid])) $net[$fid] = ['bill' => 0, 'settle' => 0, 'holding' => 0, 'installment' => 0, 'inst_paid' => 0];
         return $fid;
     };
 
@@ -304,9 +304,10 @@ function unified_balances($myMember) {
             $paid[(int) $pm['installment_id']] = ($paid[(int) $pm['installment_id']] ?? 0) + (float) $pm['amount'];
         }
         foreach ($plans as $p) {
-            $remain = installment_due_outstanding($p, $paid[(int) $p['id']] ?? 0); // เฉพาะงวดที่ครบกำหนด
+            $pd     = $paid[(int) $p['id']] ?? 0;
+            $remain = installment_due_outstanding($p, $pd); // เฉพาะงวดที่ครบกำหนด
             $payer = (int) $p['payer_id']; $payee = (int) $p['payee_id'];
-            if ($payee === $myMember && $payer !== $myMember) { $f = $touch($net, $payer); $net[$f]['installment'] += $remain; } // เพื่อนผ่อนให้เรา
+            if ($payee === $myMember && $payer !== $myMember) { $f = $touch($net, $payer); $net[$f]['installment'] += $remain; $net[$f]['inst_paid'] += $pd; } // เพื่อนผ่อนให้เรา (เก็บยอดที่เพื่อนจ่ายแล้ว)
             if ($payer === $myMember && $payee !== $myMember) { $f = $touch($net, $payee); $net[$f]['installment'] -= $remain; } // เราผ่อนให้เพื่อน
         }
     }

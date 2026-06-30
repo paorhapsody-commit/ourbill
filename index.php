@@ -117,6 +117,11 @@ layout_head('หน้าหลัก', 'index.php');
                         </span>
                     <?php endforeach; ?>
                 </div>
+                <?php if (($f['inst_paid'] ?? 0) > 0.009): ?>
+                    <p class="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
+                        <i data-lucide="check" class="w-3 h-3 text-emerald-500"></i> หักผ่อนที่เพื่อนจ่ายแล้ว <?= baht($f['inst_paid']) ?> ฿
+                    </p>
+                <?php endif; ?>
             </div>
             <div class="text-right shrink-0">
                 <?php if ($net > 0.009): ?>
