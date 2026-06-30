@@ -55,6 +55,12 @@ $friendMembers = array_filter(selectable_members($me), fn($m) => (int) $m['id'] 
 layout_head('เงินเพื่อน', 'holdings.php');
 ?>
 
+<!-- แท็บย่อย -->
+<div class="flex gap-2 mb-5">
+    <a href="holdings.php" class="px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-br from-emerald-400 to-teal-500 text-white shadow-md shadow-emerald-200">เงินที่ถือไว้</a>
+    <a href="installments.php" class="px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-slate-200 text-slate-500 hover:text-emerald-600">ผ่อนรายเดือน</a>
+</div>
+
 <h1 class="text-xl font-bold text-slate-700 flex items-center gap-2 mb-1">
     <i data-lucide="piggy-bank" class="w-6 h-6 text-emerald-500"></i> เงินเพื่อนที่ถือไว้
 </h1>

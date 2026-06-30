@@ -204,3 +204,33 @@ CREATE TABLE IF NOT EXISTS holdings (
 ALTER TABLE holdings ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS allow_all ON holdings;
 CREATE POLICY allow_all ON holdings FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+-- =========================================================
+--  12. เงินผ่อนรายเดือน (เพื่อนผ่อนจ่ายให้เรา)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS installments (
+    id             SERIAL PRIMARY KEY,
+    payer_id       INT REFERENCES users(id) ON DELETE CASCADE,  -- เพื่อนที่ผ่อนจ่าย
+    payee_id       INT REFERENCES users(id) ON DELETE CASCADE,  -- เรา (ผู้รับเงิน)
+    title          VARCHAR(255) NOT NULL,
+    monthly_amount DECIMAL(10, 2) NOT NULL,
+    months         INT NOT NULL,
+    start_date     DATE,
+    created_at     TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS installment_payments (
+    id             SERIAL PRIMARY KEY,
+    installment_id INT REFERENCES installments(id) ON DELETE CASCADE,
+    amount         DECIMAL(10, 2) NOT NULL,
+    source         VARCHAR(20) DEFAULT 'cash',  -- cash = จ่ายสด/โอน | prepaid = หักจากเงินที่จ่ายไว้ก่อน
+    note           VARCHAR(255),
+    paid_at        TIMESTAMP DEFAULT NOW()
+);
+
+ALTER TABLE installments         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE installment_payments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS allow_all ON installments;
+DROP POLICY IF EXISTS allow_all ON installment_payments;
+CREATE POLICY allow_all ON installments         FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+CREATE POLICY allow_all ON installment_payments FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
