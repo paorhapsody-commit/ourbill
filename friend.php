@@ -83,6 +83,17 @@ layout_head($friendName, 'friends.php');
     </div>
 </div>
 
+<?php if (abs($net) > 0.009): ?>
+<form method="POST" action="settle.php" class="mb-3"
+      onsubmit="return confirm('เคลียร์ยอดสุทธิรวม <?= baht(abs($net)) ?> ฿ กับ <?= htmlspecialchars(addslashes($friendName)) ?> ?\nระบบจะปิดยอดทั้งบิล เงินที่ถือไว้ และผ่อน ให้เป็น 0');">
+    <input type="hidden" name="action" value="settle_all">
+    <input type="hidden" name="friend_id" value="<?= $fid ?>">
+    <button type="submit" class="w-full bg-gradient-to-br from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white font-bold text-sm py-3 rounded-xl shadow-md shadow-emerald-200 transition flex items-center justify-center gap-2">
+        <i data-lucide="check-check" class="w-4 h-4"></i> เคลียร์ยอดสุทธิทั้งหมด (<?= baht(abs($net)) ?> ฿)
+    </button>
+</form>
+<?php endif; ?>
+
 <!-- ปุ่มลัด -->
 <div class="grid grid-cols-3 gap-2 mb-7">
     <a href="add-expense.php" class="flex flex-col items-center gap-1 py-3 rounded-xl bg-white border border-slate-100 shadow-sm text-slate-600 hover:text-emerald-600 hover:border-emerald-200 transition text-xs font-semibold">

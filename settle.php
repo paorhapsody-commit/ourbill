@@ -7,7 +7,14 @@ require_once '_layout.php';
 $me       = (int) ($_SESSION['user']['account_id'] ?? 0);
 $myMember = (int) ($_SESSION['user']['member_id'] ?? 0);
 
-// บันทึกการโอนเงินคืน (settlement — มีผลกับยอดบิล)
+// เคลียร์ยอดสุทธิรวมทีเดียว (บิล + เงินถือไว้ + ผ่อน) ให้เป็น 0
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'settle_all' && $myMember > 0) {
+    settle_net_with_friend($myMember, (int) ($_POST['friend_id'] ?? 0));
+    header('Location: settle.php?cleared=1');
+    exit;
+}
+
+// บันทึกการโอนเงินคืนแบบกำหนดเอง (settlement — มีผลกับยอดบิลเท่านั้น)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'settle') {
     $from = intval($_POST['from_user'] ?? 0);
     $to   = intval($_POST['to_user'] ?? 0);
@@ -26,11 +33,10 @@ $friends = unified_balances($myMember);
 $members = array_values(selectable_members($me)); // me + friends (สำหรับฟอร์มกำหนดเอง)
 $history = sb_get('settlements?select=*,from:from_user(name),to:to_user(name)&order=created_at.desc&limit=15') ?: [];
 
-// คัดเฉพาะเพื่อนที่ยังมียอด "ค่าบิล" ค้าง (settlement เคลียร์เฉพาะส่วนบิล)
+// คัดเฉพาะเพื่อนที่ยังมียอดสุทธิรวมค้าง (รวมทุกฟังก์ชัน)
 $pending = [];
 foreach ($friends as $f) {
-    $billNet = round($f['bill'] + $f['settle'], 2);
-    if (abs($billNet) > 0.009) { $f['billNet'] = $billNet; $pending[] = $f; }
+    if (abs((float) $f['net']) > 0.009) $pending[] = $f;
 }
 
 layout_head('เคลียร์หนี้', 'settle.php');
@@ -38,23 +44,28 @@ layout_head('เคลียร์หนี้', 'settle.php');
 
 <!-- แท็บย่อย -->
 <div class="flex gap-2 mb-5 flex-wrap">
-    <a href="settle.php" class="px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-br from-emerald-400 to-teal-500 text-white shadow-md shadow-emerald-200">ค่าบิล</a>
+    <a href="settle.php" class="px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-br from-emerald-400 to-teal-500 text-white shadow-md shadow-emerald-200">ยอดสุทธิรวม</a>
     <a href="holdings.php" class="px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-slate-200 text-slate-500 hover:text-emerald-600">เงินที่ถือไว้</a>
     <a href="installments.php" class="px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-slate-200 text-slate-500 hover:text-emerald-600">ผ่อนรายเดือน</a>
 </div>
 
 <h1 class="text-xl font-bold text-slate-700 flex items-center gap-2 mb-1">
-    <i data-lucide="arrow-right-left" class="w-6 h-6 text-emerald-500"></i> เคลียร์หนี้ค่าบิล
+    <i data-lucide="arrow-right-left" class="w-6 h-6 text-emerald-500"></i> เคลียร์หนี้
 </h1>
-<p class="text-sm text-slate-400 mb-6">ยอดค่าบิลระหว่างเรากับเพื่อน · กดเคลียร์เมื่อจ่ายเงินจริงแล้ว (เงินที่ถือไว้/ผ่อนรายเดือน เคลียร์ที่แท็บของมันเอง)</p>
+<p class="text-sm text-slate-400 mb-6">ยอดสุทธิรวมทุกอย่าง (หารบิล + เงินที่ถือไว้ + ผ่อนรายเดือน) · กด <b>เคลียร์ทั้งหมด</b> เมื่อจ่ายเงินจริงแล้ว ระบบจะปิดยอดทุกส่วนให้เป็น 0</p>
 
+<?php if (isset($_GET['cleared'])): ?>
+    <div class="mb-5 p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-medium rounded-xl flex items-center gap-2">
+        <i data-lucide="check-circle" class="w-4 h-4"></i> เคลียร์ยอดสุทธิรวมเรียบร้อย ปิดยอดทุกส่วนแล้ว
+    </div>
+<?php endif; ?>
 <?php if (isset($_GET['done'])): ?>
     <div class="mb-5 p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-medium rounded-xl flex items-center gap-2">
         <i data-lucide="check-circle" class="w-4 h-4"></i> บันทึกการโอนเรียบร้อย ยอดอัปเดตแล้ว
     </div>
 <?php endif; ?>
 
-<!-- รายการค่าบิลที่ต้องเคลียร์ -->
+<!-- รายการยอดสุทธิที่ต้องเคลียร์ -->
 <?php if ($myMember === 0): ?>
     <div class="mb-6 p-4 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl flex items-center gap-2">
         <i data-lucide="alert-triangle" class="w-4 h-4"></i> เซสชันเก่า — <a href="logout.php" class="font-semibold underline">ออกแล้วล็อกอินใหม่</a>
@@ -64,40 +75,44 @@ layout_head('เคลียร์หนี้', 'settle.php');
         <span class="inline-grid place-items-center w-16 h-16 rounded-full bg-emerald-100 text-emerald-500 mb-3">
             <i data-lucide="party-popper" class="w-8 h-8"></i>
         </span>
-        <p class="font-bold text-slate-700 text-lg">ค่าบิลเคลียร์หมดแล้ว! 🎉</p>
-        <p class="text-sm text-slate-400 mt-1">ไม่มีหนี้ค่าบิลค้างกับเพื่อน</p>
+        <p class="font-bold text-slate-700 text-lg">เคลียร์หมดแล้ว! 🎉</p>
+        <p class="text-sm text-slate-400 mt-1">ไม่มียอดสุทธิค้างกับเพื่อนคนไหน</p>
     </div>
 <?php else: ?>
     <div class="space-y-3 mb-8">
         <?php foreach ($pending as $f):
-            $billNet = $f['billNet'];
-            $friendOwesMe = $billNet > 0;
-            // ทิศทางการโอนเพื่อเคลียร์ส่วนบิล
-            $fromId = $friendOwesMe ? $f['id'] : $myMember;
-            $toId   = $friendOwesMe ? $myMember : $f['id']; ?>
+            $net = round((float) $f['net'], 2);
+            $friendOwesMe = $net > 0;
+            // breakdown chip ต่อ bucket (+ = เพื่อนติดเรา)
+            $chips = [
+                ['label' => 'บิล',     'val' => round($f['bill'] + $f['settle'], 2)],
+                ['label' => 'ถือเงิน', 'val' => round((float) $f['holding'], 2)],
+                ['label' => 'ผ่อน',    'val' => round((float) $f['installment'], 2)],
+            ]; ?>
             <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex flex-col sm:flex-row sm:items-center gap-3">
                 <a href="friend.php?id=<?= $f['id'] ?>" class="flex items-center gap-3 flex-1 min-w-0 group">
                     <?= avatar($f['id'], $f['name'], 'w-11 h-11 text-base') ?>
                     <div class="min-w-0">
                         <p class="font-bold text-slate-800 truncate group-hover:text-emerald-600 transition"><?= htmlspecialchars($f['name']) ?></p>
-                        <p class="text-xs <?= $friendOwesMe ? 'text-emerald-600' : 'text-rose-500' ?>">
-                            <?= $friendOwesMe ? 'ติดค่าบิลเรา' : 'เราติดค่าบิล' ?> <?= baht(abs($billNet)) ?> ฿
+                        <p class="text-sm font-bold <?= $friendOwesMe ? 'text-emerald-600' : 'text-rose-500' ?>">
+                            <?= $friendOwesMe ? 'ติดเรารวม' : 'เราติดรวม' ?> <?= baht(abs($net)) ?> ฿
                         </p>
-                        <?php if (abs($f['net']) > 0.009 && abs($f['net'] - $billNet) > 0.009): ?>
-                            <p class="text-[11px] text-slate-400">ยอดรวมทุกอย่าง: <?= $f['net'] >= 0 ? '+' : '' ?><?= baht($f['net']) ?> ฿</p>
-                        <?php endif; ?>
+                        <div class="flex flex-wrap gap-1 mt-1">
+                            <?php foreach ($chips as $c): if (abs($c['val']) < 0.009) continue; ?>
+                                <span class="text-[11px] px-1.5 py-0.5 rounded <?= $c['val'] >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-500' ?>">
+                                    <?= $c['label'] ?> <?= $c['val'] >= 0 ? '+' : '−' ?><?= baht(abs($c['val'])) ?>
+                                </span>
+                            <?php endforeach; ?>
+                        </div>
                     </div>
                 </a>
                 <form method="POST" class="sm:w-auto"
-                      onsubmit="return confirm('บันทึกว่าเคลียร์ค่าบิล <?= baht(abs($billNet)) ?> ฿ กับ <?= htmlspecialchars(addslashes($f['name'])) ?> ?');">
-                    <input type="hidden" name="action" value="settle">
-                    <input type="hidden" name="from_user" value="<?= $fromId ?>">
-                    <input type="hidden" name="to_user" value="<?= $toId ?>">
-                    <input type="hidden" name="amount" value="<?= abs($billNet) ?>">
-                    <input type="hidden" name="note" value="เคลียร์ค่าบิล">
+                      onsubmit="return confirm('เคลียร์ยอดสุทธิรวม <?= baht(abs($net)) ?> ฿ กับ <?= htmlspecialchars(addslashes($f['name'])) ?> ?\nระบบจะปิดยอดทั้งบิล เงินที่ถือไว้ และผ่อน ให้เป็น 0');">
+                    <input type="hidden" name="action" value="settle_all">
+                    <input type="hidden" name="friend_id" value="<?= $f['id'] ?>">
                     <button type="submit"
                             class="w-full sm:w-auto bg-gradient-to-br from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white font-semibold text-sm px-5 py-2.5 rounded-xl shadow-md shadow-emerald-200 transition flex items-center justify-center gap-2">
-                        <i data-lucide="check" class="w-4 h-4"></i> เคลียร์แล้ว
+                        <i data-lucide="check-check" class="w-4 h-4"></i> เคลียร์ทั้งหมด
                     </button>
                 </form>
             </div>

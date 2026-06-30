@@ -328,6 +328,66 @@ function friend_timeline($myMember, $friendId) {
     return $ev;
 }
 
+/**
+ * เคลียร์ยอดสุทธิรวมกับเพื่อนคนเดียวให้เป็น 0 ในคลิกเดียว
+ * จัดการทุก bucket: ลง settlement (ส่วนบิล) + คืนเงินที่ถือไว้ + จ่ายผ่อนที่เหลือ
+ * คืน array สรุปสิ่งที่ทำ ['net','bill','holding','installment'] หรือ null ถ้าไม่มีอะไรต้องเคลียร์
+ */
+function settle_net_with_friend($myMember, $friendId) {
+    $me = (int) $myMember; $fr = (int) $friendId;
+    if ($me <= 0 || $fr <= 0 || $me === $fr) return null;
+
+    $all = unified_balances($me);
+    $f   = $all[$fr] ?? null;
+    if (!$f || abs((float) $f['net']) < 0.009) return null;
+
+    $billB = round($f['bill'] + $f['settle'], 2);   // ส่วนบิลคงเหลือ (+ = เพื่อนติดเรา)
+    $holdB = round($f['holding'], 2);                // ส่วนเงินที่ถือไว้
+    $instB = round($f['installment'], 2);            // ส่วนผ่อนคงเหลือ
+    $note  = 'เคลียร์ยอดสุทธิรวม';
+
+    // (1) เงินที่ถือไว้ -> ลงรายการคืน/รับคืน ให้ยอดถือระหว่างกันเป็น 0
+    if (abs($holdB) > 0.009) {
+        if ($holdB > 0) {
+            // เพื่อนถือเงินเรา -> เพื่อนคืนเงินเรา
+            sb_insert('holdings', ['holder_id' => $fr, 'owner_id' => $me, 'amount' => -$holdB, 'note' => $note]);
+        } else {
+            // เราถือเงินเพื่อน -> เราคืนเงินเพื่อน (amount ติดลบอยู่แล้ว = คืน)
+            sb_insert('holdings', ['holder_id' => $me, 'owner_id' => $fr, 'amount' => $holdB, 'note' => $note]);
+        }
+    }
+
+    // (2) ผ่อนรายเดือน -> จ่ายงวดที่เหลือของทุกแผนระหว่างกันให้ครบ
+    if (abs($instB) > 0.009) {
+        $plans = sb_rows(sb_get('installments?select=id,monthly_amount,months'
+            . '&or=(and(payee_id.eq.' . $me . ',payer_id.eq.' . $fr . '),and(payer_id.eq.' . $me . ',payee_id.eq.' . $fr . '))'));
+        if ($plans) {
+            $ids  = implode(',', array_map(fn($p) => (int) $p['id'], $plans));
+            $paid = [];
+            foreach (sb_rows(sb_get('installment_payments?installment_id=in.(' . $ids . ')&select=installment_id,amount')) as $pm) {
+                $paid[(int) $pm['installment_id']] = ($paid[(int) $pm['installment_id']] ?? 0) + (float) $pm['amount'];
+            }
+            foreach ($plans as $p) {
+                $remain = round(max(0, (float) $p['monthly_amount'] * (int) $p['months'] - ($paid[(int) $p['id']] ?? 0)), 2);
+                if ($remain > 0.009) {
+                    sb_insert('installment_payments', ['installment_id' => (int) $p['id'], 'amount' => $remain, 'source' => 'cash', 'note' => $note]);
+                }
+            }
+        }
+    }
+
+    // (3) ส่วนบิล -> ลง settlement ตามทิศทาง
+    if (abs($billB) > 0.009) {
+        if ($billB > 0) {
+            sb_insert('settlements', ['from_user' => $fr, 'to_user' => $me, 'amount' => $billB,  'note' => $note]);
+        } else {
+            sb_insert('settlements', ['from_user' => $me, 'to_user' => $fr, 'amount' => -$billB, 'note' => $note]);
+        }
+    }
+
+    return ['net' => round((float) $f['net'], 2), 'bill' => $billB, 'holding' => $holdB, 'installment' => $instB];
+}
+
 /** แลก authorization code เป็น access token */
 function google_exchange_code($code) {
     $ch = curl_init('https://oauth2.googleapis.com/token');
