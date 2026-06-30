@@ -18,11 +18,20 @@ foreach ($balances as $b) { $total_volume += (float) $b['paid_amount']; }
 $total_outstanding = 0;
 foreach ($settle as $t) { $total_outstanding += $t['amount']; }
 
+// เงินเพื่อนที่เราถือไว้
+$myMember = (int) ($_SESSION['user']['member_id'] ?? 0);
+$held = 0;
+if ($myMember) {
+    foreach (sb_rows(sb_get('holdings?holder_id=eq.' . $myMember . '&select=amount')) as $h) {
+        $held += (float) $h['amount'];
+    }
+}
+
 layout_head('หน้าหลัก', 'index.php');
 ?>
 
 <!-- Summary stat cards -->
-<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-7">
+<div class="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4 mb-7">
     <div class="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
         <div class="flex items-center gap-2 text-slate-400 text-xs font-medium mb-1.5">
             <i data-lucide="banknote" class="w-4 h-4"></i> ใช้จ่ายรวมทั้งกลุ่ม
@@ -47,6 +56,12 @@ layout_head('หน้าหลัก', 'index.php');
         </div>
         <p class="text-2xl font-extrabold"><?= count($settle) ?> <span class="text-sm font-medium text-emerald-100">รายการ</span></p>
     </div>
+    <a href="holdings.php" class="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm hover:shadow-md transition col-span-2 lg:col-span-1">
+        <div class="flex items-center gap-2 text-slate-400 text-xs font-medium mb-1.5">
+            <i data-lucide="piggy-bank" class="w-4 h-4"></i> เงินเพื่อนที่ถือไว้
+        </div>
+        <p class="text-2xl font-extrabold text-slate-800"><?= baht($held) ?> <span class="text-sm font-medium text-slate-400">฿</span></p>
+    </a>
 </div>
 
 <!-- Balances -->

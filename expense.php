@@ -255,19 +255,16 @@ layout_head('รายละเอียดรายจ่าย', '');
 </div>
 
 <script src="split-editor.js"></script>
+<script src="image-compress.js"></script>
 <script>
 (function () {
     const inp = document.getElementById('receiptEdit');
     if (!inp) return;
-    const img = document.getElementById('receiptPreviewEdit');
-    const hint = document.getElementById('receiptHintEdit');
-    inp.addEventListener('change', function () {
-        const f = this.files && this.files[0];
-        if (!f) return;
-        img.src = URL.createObjectURL(f);
-        img.classList.remove('hidden');
-        hint.textContent = 'แตะเพื่อเปลี่ยนรูป';
-    });
+    attachImageCompressor(inp, { onPreview: function (url) {
+        const img = document.getElementById('receiptPreviewEdit');
+        img.src = url; img.classList.remove('hidden');
+        document.getElementById('receiptHintEdit').textContent = 'แตะเพื่อเปลี่ยนรูป (บีบขนาดให้อัตโนมัติ)';
+    }});
 })();
 </script>
 <?php layout_foot(); ?>

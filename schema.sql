@@ -186,3 +186,21 @@ DROP POLICY IF EXISTS receipts_read   ON storage.objects;
 DROP POLICY IF EXISTS receipts_insert ON storage.objects;
 CREATE POLICY receipts_read   ON storage.objects FOR SELECT TO anon, authenticated USING (bucket_id = 'receipts');
 CREATE POLICY receipts_insert ON storage.objects FOR INSERT TO anon, authenticated WITH CHECK (bucket_id = 'receipts');
+
+-- =========================================================
+--  11. เงินของเพื่อนที่ถือไว้ (holdings)
+--     บันทึกว่า "เราถือเงินของเพื่อนคนไหนไว้เท่าไหร่"
+--     amount: + = รับเงินเพื่อนมาถือ | - = คืนเงินไป
+-- =========================================================
+CREATE TABLE IF NOT EXISTS holdings (
+    id         SERIAL PRIMARY KEY,
+    holder_id  INT REFERENCES users(id) ON DELETE CASCADE, -- คนถือเงิน
+    owner_id   INT REFERENCES users(id) ON DELETE CASCADE, -- เจ้าของเงิน
+    amount     DECIMAL(10, 2) NOT NULL,
+    note       VARCHAR(255),
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+ALTER TABLE holdings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS allow_all ON holdings;
+CREATE POLICY allow_all ON holdings FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);

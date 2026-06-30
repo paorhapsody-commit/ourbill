@@ -172,19 +172,16 @@ layout_head('เพิ่มรายจ่าย', 'add-expense.php');
 </div>
 
 <script src="split-editor.js"></script>
+<script src="image-compress.js"></script>
 <script>
 (function () {
     const inp = document.getElementById('receipt');
     if (!inp) return;
-    const img = document.getElementById('receiptPreview');
-    const hint = document.getElementById('receiptHint');
-    inp.addEventListener('change', function () {
-        const f = this.files && this.files[0];
-        if (!f) { img.classList.add('hidden'); hint.textContent = 'แตะเพื่อถ่าย/เลือกรูปใบเสร็จ'; return; }
-        img.src = URL.createObjectURL(f);
-        img.classList.remove('hidden');
-        hint.textContent = 'แตะเพื่อเปลี่ยนรูป';
-    });
+    attachImageCompressor(inp, { onPreview: function (url) {
+        const img = document.getElementById('receiptPreview');
+        img.src = url; img.classList.remove('hidden');
+        document.getElementById('receiptHint').textContent = 'แตะเพื่อเปลี่ยนรูป (บีบขนาดให้อัตโนมัติ)';
+    }});
 })();
 </script>
 

@@ -8,6 +8,7 @@ function nav_items() {
         ['href' => 'index.php',       'icon' => 'layout-dashboard', 'label' => 'หน้าหลัก'],
         ['href' => 'add-expense.php', 'icon' => 'plus-circle',      'label' => 'เพิ่มรายจ่าย'],
         ['href' => 'settle.php',      'icon' => 'arrow-right-left',  'label' => 'เคลียร์หนี้'],
+        ['href' => 'holdings.php',    'icon' => 'piggy-bank',        'label' => 'เงินเพื่อน'],
         ['href' => 'friends.php',     'icon' => 'users',             'label' => 'เพื่อน'],
     ];
 }
@@ -85,12 +86,12 @@ function layout_head($title, $active = '') {
 
     <!-- Mobile bottom tab bar -->
     <nav class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/80 backdrop-blur-xl border-t border-white/60 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
-        <div class="grid grid-cols-4">
+        <div class="grid grid-cols-5">
             <?php foreach ($items as $it):
                 $on = $it['href'] === $active; ?>
-                <a href="<?= $it['href'] ?>" class="flex flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium transition
+                <a href="<?= $it['href'] ?>" class="flex flex-col items-center gap-0.5 py-2.5 text-[10px] font-medium transition
                    <?= $on ? 'text-emerald-600' : 'text-slate-400' ?>">
-                    <span class="<?= $on ? 'bg-emerald-100 px-4 py-1 rounded-full' : 'px-4 py-1' ?>">
+                    <span class="<?= $on ? 'bg-emerald-100 px-3 py-1 rounded-full' : 'px-3 py-1' ?>">
                         <i data-lucide="<?= $it['icon'] ?>" class="w-5 h-5"></i>
                     </span>
                     <?= $it['label'] ?>
