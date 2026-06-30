@@ -88,6 +88,17 @@ if ($plans) {
 $held = $myMember ? held_by_owner($myMember) : [];
 $friendMembers = array_filter(selectable_members($me), fn($m) => (int) $m['id'] !== $myMember);
 
+// สรุปยอดผ่อน (เพื่อนผ่อนจ่ายให้เรา)
+$sumRemain = 0; $sumDue = 0; $sumPaid = 0; $activePlans = 0;
+foreach ($plans as $p) {
+    $t  = (float) $p['monthly_amount'] * (int) $p['months'];
+    $pd = 0; foreach (($paidById[(int) $p['id']] ?? []) as $pm) $pd += (float) $pm['amount'];
+    $sumPaid   += $pd;
+    $sumRemain += max(0, round($t - $pd, 2));                 // เหลือทั้งแผน
+    $sumDue    += installment_due_outstanding($p, $pd);       // ถึงกำหนดแล้วแต่ยังไม่จ่าย
+    if (round($t - $pd, 2) > 0.009) $activePlans++;
+}
+
 layout_head('ผ่อนรายเดือน', 'holdings.php');
 ?>
 
@@ -117,6 +128,28 @@ layout_head('ผ่อนรายเดือน', 'holdings.php');
     <div class="mb-5 p-3.5 bg-rose-50 border border-rose-200 text-rose-700 text-sm font-medium rounded-xl flex items-center gap-2">
         <i data-lucide="alert-triangle" class="w-4 h-4"></i> <?= htmlspecialchars($status) ?>
     </div>
+<?php endif; ?>
+
+<?php if (!empty($plans)): ?>
+<!-- สรุปยอดผ่อนค้าง -->
+<div class="bg-gradient-to-br from-emerald-400 to-teal-500 rounded-2xl p-5 shadow-lg shadow-emerald-200 text-white mb-6">
+    <p class="text-emerald-50 text-xs flex items-center gap-1.5"><i data-lucide="calendar-clock" class="w-4 h-4"></i> ยอดผ่อนค้างทั้งหมด (รอรับจากเพื่อน)</p>
+    <p class="text-4xl font-black mt-0.5"><?= baht($sumRemain) ?> <span class="text-lg font-medium text-emerald-100">฿</span></p>
+    <div class="grid grid-cols-3 gap-2 mt-4">
+        <div class="bg-white/15 rounded-xl px-3 py-2">
+            <p class="text-emerald-50 text-[11px]">ถึงกำหนดแล้ว รอเก็บ</p>
+            <p class="font-bold text-lg leading-tight"><?= baht($sumDue) ?> ฿</p>
+        </div>
+        <div class="bg-white/15 rounded-xl px-3 py-2">
+            <p class="text-emerald-50 text-[11px]">จ่ายมาแล้ว</p>
+            <p class="font-bold text-lg leading-tight"><?= baht($sumPaid) ?> ฿</p>
+        </div>
+        <div class="bg-white/15 rounded-xl px-3 py-2">
+            <p class="text-emerald-50 text-[11px]">แผนที่ยังผ่อนอยู่</p>
+            <p class="font-bold text-lg leading-tight"><?= (int) $activePlans ?> แผน</p>
+        </div>
+    </div>
+</div>
 <?php endif; ?>
 
 <!-- สร้างแผนผ่อนใหม่ -->
