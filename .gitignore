@@ -1,0 +1,9 @@
+# ค่าลับเฉพาะเครื่อง (ตั้งเป็น Environment Variable บนเซิร์ฟเวอร์แทน)
+config.local.php
+
+# ระบบ/แก้ไข
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
