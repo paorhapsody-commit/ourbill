@@ -154,7 +154,9 @@ function ensure_member($account) {
     return $res['body'][0] ?? null;
 }
 
-/* ---------- ธีมสี (บันทึกต่อบัญชีใน app_accounts.theme) ---------- */
+/* ---------- ธีมสี (บันทึกต่อสมาชิกใน users.theme)
+   หมายเหตุ: เก็บที่ users ไม่ใช่ app_accounts เพราะ RLS บล็อก anon UPDATE บน app_accounts
+   (กันผู้ใช้แก้ status อนุมัติตัวเอง) แต่ users อนุญาต anon UPDATE เหมือน expenses ฯลฯ ---------- */
 
 /** รายชื่อธีมที่อนุญาต — ต้องตรงกับ window.OB_THEMES ใน _layout.php */
 function ob_valid_themes() { return ['green', 'sky', 'violet', 'amber', 'fuchsia']; }
@@ -165,13 +167,54 @@ function current_user_theme() {
     return in_array($t, ob_valid_themes(), true) ? $t : '';
 }
 
-/** บันทึกธีมของผู้ใช้ลง app_accounts + อัปเดต session; คืน true ถ้าธีมถูกต้อง */
+/** บันทึกธีมของผู้ใช้ลง users + อัปเดต session; คืน true ถ้าธีมถูกต้อง */
 function save_user_theme($theme) {
     if (!in_array($theme, ob_valid_themes(), true)) return false;
-    $acc = (int) (current_user()['account_id'] ?? 0);
-    if ($acc > 0) sb_update('app_accounts?id=eq.' . $acc, ['theme' => $theme]);
+    $mid = (int) (current_user()['member_id'] ?? 0);
+    if ($mid > 0) sb_update('users?id=eq.' . $mid, ['theme' => $theme]);
     $_SESSION['user']['theme'] = $theme;
     return true;
+}
+
+/** รูปโปรไฟล์ตั้งต้นจาก Google (เก็บใน app_accounts.picture) — ใช้ตอนลบรูปที่อัปเอง */
+function user_google_picture() {
+    $g = current_user()['google_picture'] ?? '';
+    if ($g !== '') return $g;
+    $acc = (int) (current_user()['account_id'] ?? 0);
+    if ($acc <= 0) return '';
+    $rows = sb_rows(sb_get('app_accounts?id=eq.' . $acc . '&select=picture&limit=1'));
+    return $rows[0]['picture'] ?? '';
+}
+
+/**
+ * บันทึกโปรไฟล์ (ชื่อที่แสดง + รูป) ลง users + อัปเดต session
+ * @param string      $name       ชื่อที่จะแสดง (ใช้ทั่วแอปในบิล/เพื่อน)
+ * @param string|null $pictureUrl null = ไม่เปลี่ยนรูปเดิม | '' = ลบรูปที่อัปเอง (กลับไปใช้รูป Google) | URL = ตั้งรูปใหม่
+ * @return array{0:bool,1:string|null} [success, error]
+ */
+function save_user_profile($name, $pictureUrl = null) {
+    $name = trim((string) $name);
+    if ($name === '')            return [false, 'กรุณากรอกชื่อที่จะแสดง'];
+    if (mb_strlen($name) > 60)   return [false, 'ชื่อยาวเกินไป (ไม่เกิน 60 ตัวอักษร)'];
+
+    $mid    = (int) (current_user()['member_id'] ?? 0);
+    $revert = ($pictureUrl === '');           // ลบรูปที่อัปเอง
+    $patch  = ['name' => $name];
+    if ($revert)                    $patch['picture'] = null;
+    elseif ($pictureUrl !== null)   $patch['picture'] = $pictureUrl;
+
+    if ($mid > 0) {
+        $res = sb_update('users?id=eq.' . $mid, $patch);
+        if (($res['status'] ?? 0) < 200 || ($res['status'] ?? 0) >= 300) {
+            return [false, 'บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง'];
+        }
+        if ($revert) sb_delete_file('receipts', avatar_object_name($mid)); // ลบไฟล์ทิ้ง ไม่ให้เปลืองพื้นที่
+    }
+
+    $_SESSION['user']['name'] = $name;
+    if ($revert)                  $_SESSION['user']['picture'] = user_google_picture();
+    elseif ($pictureUrl !== null) $_SESSION['user']['picture'] = $pictureUrl;
+    return [true, null];
 }
 
 /* ---------- ระบบเพื่อน ---------- */

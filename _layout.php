@@ -111,16 +111,17 @@ function layout_head($title, $active = '') {
 
                         <div id="userMenuPanel"
                              class="hidden absolute right-0 mt-2 w-64 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-xl border border-slate-100 p-2 z-50 origin-top-right">
-                            <!-- โปรไฟล์ -->
-                            <div class="flex items-center gap-3 px-2 py-2">
+                            <!-- โปรไฟล์ (กดเพื่อแก้ไข) -->
+                            <a href="profile.php" class="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-slate-50 transition group">
                                 <?= $avatar ?>
-                                <div class="min-w-0">
+                                <div class="min-w-0 flex-1">
                                     <p class="text-sm font-bold text-slate-800 truncate"><?= htmlspecialchars($cu['name']) ?></p>
                                     <?php if (!empty($cu['email'])): ?>
                                         <p class="text-[11px] text-slate-400 truncate"><?= htmlspecialchars($cu['email']) ?></p>
                                     <?php endif; ?>
                                 </div>
-                            </div>
+                                <i data-lucide="pencil" class="w-3.5 h-3.5 text-slate-300 group-hover:text-emerald-500 transition shrink-0"></i>
+                            </a>
 
                             <div class="my-1.5 border-t border-slate-100"></div>
 
@@ -249,6 +250,7 @@ function layout_foot() {
                     window.OB_applyTheme(name);
                     persistTheme(name);
                     renderSwatches();
+                    if (window.obToast) window.obToast('เปลี่ยนธีมเป็น ' + t.label + 'แล้ว');
                 });
                 wrap.appendChild(b);
             });
@@ -272,6 +274,41 @@ function layout_foot() {
                 reverseButtons: true
             }).then(function (res) { if (res.isConfirmed) window.location.href = 'logout.php'; });
         });
+    })();
+    </script>
+    <script>
+    // ---------- Toast แจ้งเตือนเมื่อบันทึก/แก้ไขข้อมูล ----------
+    (function () {
+        if (!window.Swal) return;
+        window.obToast = function (title, icon) {
+            Swal.fire({
+                toast: true, position: 'top-end', icon: icon || 'success', title: title,
+                showConfirmButton: false, timer: 2600, timerProgressBar: true,
+                didOpen: function (el) {
+                    el.addEventListener('mouseenter', Swal.stopTimer);
+                    el.addEventListener('mouseleave', Swal.resumeTimer);
+                }
+            });
+        };
+        // แปลง query param หลัง redirect เป็น toast (แล้วลบ param กัน toast ซ้ำเมื่อ refresh)
+        var MSG = {
+            'new': 'บันทึกรายจ่ายแล้ว', saved: 'บันทึกแล้ว', ok: 'บันทึกแล้ว',
+            done: 'บันทึกการโอนแล้ว', cleared: 'เคลียร์หนี้เรียบร้อย',
+            deleted: 'ลบแล้ว', removed: 'ลบแล้ว', paid: 'บันทึกการจ่ายงวดแล้ว',
+            sent: 'ส่งคำขอเป็นเพื่อนแล้ว', accepted: 'รับเป็นเพื่อนแล้ว'
+        };
+        try {
+            var p = new URLSearchParams(location.search);
+            for (var k in MSG) {
+                if (p.has(k)) {
+                    window.obToast(MSG[k], 'success');
+                    p.delete(k);
+                    var qs = p.toString();
+                    history.replaceState(null, '', location.pathname + (qs ? '?' + qs : '') + location.hash);
+                    break;
+                }
+            }
+        } catch (e) {}
     })();
     </script>
 </body>

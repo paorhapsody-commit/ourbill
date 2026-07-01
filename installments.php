@@ -119,11 +119,6 @@ layout_head('ผ่อนรายเดือน', 'holdings.php');
     </div>
 <?php else: ?>
 
-<?php if (isset($_GET['saved']) || isset($_GET['paid']) || isset($_GET['removed'])): ?>
-    <div class="mb-5 p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-medium rounded-xl flex items-center gap-2">
-        <i data-lucide="check-circle" class="w-4 h-4"></i> บันทึกเรียบร้อยแล้ว
-    </div>
-<?php endif; ?>
 <?php if ($status): ?>
     <div class="mb-5 p-3.5 bg-rose-50 border border-rose-200 text-rose-700 text-sm font-medium rounded-xl flex items-center gap-2">
         <i data-lucide="alert-triangle" class="w-4 h-4"></i> <?= htmlspecialchars($status) ?>

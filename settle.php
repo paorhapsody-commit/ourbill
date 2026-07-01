@@ -58,17 +58,6 @@ layout_head('เคลียร์หนี้', 'settle.php');
 </h1>
 <p class="text-sm text-slate-400 mb-6">สรุปแล้วใครเป็นหนี้ใคร · <b>ลูกหนี้กรอกจำนวนที่จ่ายคืน</b> แล้วกดเคลียร์ — ปิดยอดบิล/ผ่อนที่ถึงกำหนด/เงินที่ถือไว้ทั้งหมด ส่วนต่าง (จ่ายเกิน/ขาด) เก็บไว้ที่ <a href="holdings.php" class="text-emerald-600 font-semibold">เงินเพื่อน</a></p>
 
-<?php if (isset($_GET['cleared'])): ?>
-    <div class="mb-5 p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-medium rounded-xl flex items-center gap-2">
-        <i data-lucide="check-circle" class="w-4 h-4"></i> เคลียร์ยอดสุทธิรวมเรียบร้อย ปิดยอดทุกส่วนแล้ว
-    </div>
-<?php endif; ?>
-<?php if (isset($_GET['done'])): ?>
-    <div class="mb-5 p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-medium rounded-xl flex items-center gap-2">
-        <i data-lucide="check-circle" class="w-4 h-4"></i> บันทึกการโอนเรียบร้อย ยอดอัปเดตแล้ว
-    </div>
-<?php endif; ?>
-
 <!-- รายการยอดสุทธิที่ต้องเคลียร์ -->
 <?php if ($myMember === 0): ?>
     <div class="mb-6 p-4 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl flex items-center gap-2">

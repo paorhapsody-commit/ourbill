@@ -91,15 +91,6 @@ layout_head('รายละเอียดรายจ่าย', '');
         <i data-lucide="arrow-left" class="w-4 h-4"></i> กลับหน้าหลัก
     </a>
 
-    <?php if (isset($_GET['new'])): ?>
-        <div class="mb-4 p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-medium rounded-xl flex items-center gap-2">
-            <i data-lucide="party-popper" class="w-4 h-4"></i> บันทึกรายจ่ายและหารยอดเรียบร้อยแล้ว
-        </div>
-    <?php elseif (isset($_GET['saved'])): ?>
-        <div class="mb-4 p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-medium rounded-xl flex items-center gap-2">
-            <i data-lucide="check-circle" class="w-4 h-4"></i> แก้ไขรายการเรียบร้อยแล้ว
-        </div>
-    <?php endif; ?>
     <?php if ($status_msg): ?>
         <div class="mb-4 p-3.5 bg-rose-50 border border-rose-200 text-rose-700 text-sm font-medium rounded-xl flex items-center gap-2">
             <i data-lucide="alert-triangle" class="w-4 h-4"></i> <?= htmlspecialchars($status_msg) ?>

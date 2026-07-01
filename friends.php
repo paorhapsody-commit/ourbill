@@ -76,17 +76,6 @@ function acc_avatar($acc, $size = 'w-11 h-11') {
     </div>
 <?php else: ?>
 
-<?php
-$flash = null;
-if (isset($_GET['sent']))     $flash = 'ส่งคำขอเป็นเพื่อนแล้ว รอการตอบรับ';
-if (isset($_GET['accepted'])) $flash = 'ตอบรับเป็นเพื่อนเรียบร้อย';
-if (isset($_GET['removed']))  $flash = 'อัปเดตรายการเรียบร้อย';
-if ($flash): ?>
-    <div class="mb-5 p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-medium rounded-xl flex items-center gap-2">
-        <i data-lucide="check-circle" class="w-4 h-4"></i> <?= htmlspecialchars($flash) ?>
-    </div>
-<?php endif; ?>
-
 <!-- ค้นหา -->
 <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 mb-6 relative">
     <label class="block text-sm font-semibold text-slate-600 mb-1.5">เพิ่มเพื่อนใหม่</label>

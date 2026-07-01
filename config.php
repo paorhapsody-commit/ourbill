@@ -154,8 +154,10 @@ function sb_public_url($bucket, $path) {
 /**
  * รับไฟล์รูปจากฟอร์ม -> อัปโหลด -> คืน [public_url, error]
  * ไม่มีไฟล์แนบ = [null, null] (ไม่ถือเป็น error)
+ * @param string $bucket bucket ปลายทาง (ใช้ "receipts" ร่วมกันทั้งใบเสร็จและรูปโปรไฟล์)
+ * @param string $prefix คำนำหน้าชื่อไฟล์ เช่น rcpt_ / avatar_
  */
-function handle_receipt_upload($field = 'receipt') {
+function handle_image_upload($field, $bucket = 'receipts', $prefix = 'img_', $fixedName = null) {
     if (empty($_FILES[$field]) || ($_FILES[$field]['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
         return [null, null];
     }
@@ -169,12 +171,46 @@ function handle_receipt_upload($field = 'receipt') {
         : ($f['type'] ?? '');
     if (!isset($allowed[$mime])) return [null, 'รองรับเฉพาะไฟล์รูป (JPG/PNG/WEBP/GIF)'];
 
-    $name = 'rcpt_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $allowed[$mime];
-    $res  = sb_upload_file('receipts', $name, $f['tmp_name'], $mime);
+    // $fixedName = ชื่อไฟล์คงที่ (ไม่มีนามสกุล) -> อัปทับไฟล์เดิม ไม่สร้างไฟล์ใหม่ทุกครั้ง (ประหยัดพื้นที่)
+    $name = $fixedName !== null
+        ? $fixedName
+        : $prefix . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $allowed[$mime];
+
+    $res = sb_upload_file($bucket, $name, $f['tmp_name'], $mime);
     if ($res['status'] < 200 || $res['status'] >= 300) {
-        return [null, 'อัปโหลดรูปขึ้น Storage ไม่สำเร็จ (HTTP ' . $res['status'] . ') — ตรวจว่าได้สร้าง bucket "receipts" + policy แล้ว'];
+        return [null, 'อัปโหลดรูปขึ้น Storage ไม่สำเร็จ (HTTP ' . $res['status'] . ') — ตรวจว่าได้สร้าง bucket "' . $bucket . '" + policy แล้ว'];
     }
-    return [sb_public_url('receipts', $name), null];
+    $url = sb_public_url($bucket, $name);
+    if ($fixedName !== null) $url .= '?v=' . time(); // cache-bust เพราะ URL เดิมถูกเขียนทับ
+    return [$url, null];
+}
+
+/** ลบไฟล์ออกจาก bucket (best-effort — ถ้า RLS บล็อกก็ไม่เป็นไร) */
+function sb_delete_file($bucket, $path) {
+    $url = SUPABASE_URL . '/storage/v1/object/' . $bucket . '/' . rawurlencode($path);
+    $ch  = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CUSTOMREQUEST  => 'DELETE',
+        CURLOPT_HTTPHEADER     => ['apikey: ' . SUPABASE_KEY, 'Authorization: Bearer ' . SUPABASE_KEY],
+        CURLOPT_CONNECTTIMEOUT => SB_CONNECT_TIMEOUT,
+        CURLOPT_TIMEOUT        => SB_TIMEOUT,
+    ]);
+    curl_exec($ch);
+    $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return $status;
+}
+
+/** ชื่อไฟล์รูปโปรไฟล์แบบคงที่ต่อสมาชิก (ใช้อัปทับ + ลบ) */
+function avatar_object_name($memberId) { return 'avatar_u' . (int) $memberId; }
+
+/** รูปใบเสร็จ (คงชื่อเดิมไว้เพื่อเข้ากันได้) */
+function handle_receipt_upload($field = 'receipt') { return handle_image_upload($field, 'receipts', 'rcpt_'); }
+
+/** รูปโปรไฟล์: อัปทับไฟล์ชื่อคงที่ต่อสมาชิก (bucket receipts เดียวกัน) */
+function handle_avatar_upload($memberId, $field = 'picture') {
+    return handle_image_upload($field, 'receipts', 'avatar_', avatar_object_name($memberId));
 }
 
 /* =========================================================

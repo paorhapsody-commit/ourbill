@@ -67,12 +67,6 @@ layout_head('เงินเพื่อน', 'holdings.php');
     </div>
 <?php else: ?>
 
-<?php if (isset($_GET['saved'])): ?>
-    <div class="mb-5 p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-medium rounded-xl flex items-center gap-2">
-        <i data-lucide="check-circle" class="w-4 h-4"></i> บันทึกเรียบร้อยแล้ว
-    </div>
-<?php endif; ?>
-
 <!-- 2 การ์ด: เงินเพื่อนที่อยู่กับเรา / เงินเราที่อยู่กับเพื่อน (หักลบสุทธิแล้ว) -->
 <?php
 $shownHeld = array_filter($weHold, fn($v) => abs($v['net']) > 0.009);

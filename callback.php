@@ -52,11 +52,13 @@ session_regenerate_id(true);
 $_SESSION['user'] = [
     'sub'        => $info['sub']     ?? '',
     'email'      => $email,
-    'name'       => $info['name']    ?? $email,
-    'picture'    => $info['picture'] ?? '',
+    // ชื่อ/รูป: ใช้ค่าที่ผู้ใช้ตั้งเองใน users ก่อน แล้ว fallback เป็นของ Google
+    'name'           => (!empty($member['name'])    ? $member['name']    : ($info['name']    ?? $email)),
+    'picture'        => (!empty($member['picture']) ? $member['picture'] : ($info['picture'] ?? '')),
+    'google_picture' => $info['picture'] ?? ($account['picture'] ?? ''), // รูปตั้งต้น ใช้ตอนลบรูปที่อัปเอง
     'account_id' => $account['id']   ?? null,
     'member_id'  => $member['id']    ?? null,
-    'theme'      => $account['theme'] ?? '',
+    'theme'      => $member['theme']  ?? '',
 ];
 
 header('Location: index.php');
