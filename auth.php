@@ -154,6 +154,26 @@ function ensure_member($account) {
     return $res['body'][0] ?? null;
 }
 
+/* ---------- ธีมสี (บันทึกต่อบัญชีใน app_accounts.theme) ---------- */
+
+/** รายชื่อธีมที่อนุญาต — ต้องตรงกับ window.OB_THEMES ใน _layout.php */
+function ob_valid_themes() { return ['green', 'sky', 'violet', 'amber', 'fuchsia']; }
+
+/** ธีมปัจจุบันของผู้ใช้ (จาก session) — คืน '' ถ้ายังไม่ตั้ง */
+function current_user_theme() {
+    $t = current_user()['theme'] ?? '';
+    return in_array($t, ob_valid_themes(), true) ? $t : '';
+}
+
+/** บันทึกธีมของผู้ใช้ลง app_accounts + อัปเดต session; คืน true ถ้าธีมถูกต้อง */
+function save_user_theme($theme) {
+    if (!in_array($theme, ob_valid_themes(), true)) return false;
+    $acc = (int) (current_user()['account_id'] ?? 0);
+    if ($acc > 0) sb_update('app_accounts?id=eq.' . $acc, ['theme' => $theme]);
+    $_SESSION['user']['theme'] = $theme;
+    return true;
+}
+
 /* ---------- ระบบเพื่อน ---------- */
 
 /** ดึงความสัมพันธ์เพื่อนทั้งหมดที่เกี่ยวกับบัญชีนี้ (พร้อมข้อมูลทั้งสองฝั่ง) */

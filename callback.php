@@ -56,6 +56,7 @@ $_SESSION['user'] = [
     'picture'    => $info['picture'] ?? '',
     'account_id' => $account['id']   ?? null,
     'member_id'  => $member['id']    ?? null,
+    'theme'      => $account['theme'] ?? '',
 ];
 
 header('Location: index.php');
