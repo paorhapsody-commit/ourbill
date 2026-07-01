@@ -46,6 +46,8 @@ function supabase_password_login($email, $password) {
             'Content-Type: application/json',
         ],
         CURLOPT_POSTFIELDS     => json_encode(['email' => $email, 'password' => $password]),
+        CURLOPT_CONNECTTIMEOUT => SB_CONNECT_TIMEOUT,
+        CURLOPT_TIMEOUT        => SB_TIMEOUT,
     ]);
     $res    = curl_exec($ch);
     $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -536,6 +538,8 @@ function google_exchange_code($code) {
             'redirect_uri'  => google_cfg('redirect_uri'),
             'grant_type'    => 'authorization_code',
         ]),
+        CURLOPT_CONNECTTIMEOUT => SB_CONNECT_TIMEOUT,
+        CURLOPT_TIMEOUT        => SB_TIMEOUT,
     ]);
     $res = curl_exec($ch);
     curl_close($ch);
@@ -548,6 +552,8 @@ function google_fetch_userinfo($access_token) {
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $access_token],
+        CURLOPT_CONNECTTIMEOUT => SB_CONNECT_TIMEOUT,
+        CURLOPT_TIMEOUT        => SB_TIMEOUT,
     ]);
     $res = curl_exec($ch);
     curl_close($ch);

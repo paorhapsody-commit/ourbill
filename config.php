@@ -11,14 +11,22 @@ if (is_file(__DIR__ . '/config.local.php')) {
 define('SUPABASE_URL', getenv('SUPABASE_URL') ?: (defined('LOCAL_SUPABASE_URL') ? LOCAL_SUPABASE_URL : ''));
 define('SUPABASE_KEY', getenv('SUPABASE_KEY') ?: (defined('LOCAL_SUPABASE_KEY') ? LOCAL_SUPABASE_KEY : ''));
 
+/* Timeout การเรียก Supabase (วินาที) — override ได้ใน config.local.php ก่อน require ไฟล์นี้ */
+if (!defined('SB_CONNECT_TIMEOUT')) define('SB_CONNECT_TIMEOUT', 8);
+if (!defined('SB_TIMEOUT'))         define('SB_TIMEOUT', 25);
+
 /**
  * เรียก Supabase REST API
+ *  - มี timeout กันหน้าเว็บค้างเมื่อ Supabase ไม่ตอบ
+ *  - retry อัตโนมัติ "เฉพาะ GET" เมื่อเจอความผิดพลาดชั่วคราว (เครือข่ายล่ม / HTTP 429 / 5xx)
+ *    ห้าม retry POST/PATCH/DELETE เด็ดขาด เพราะอาจสร้างรายการเงินซ้ำ (settlements/holdings ฯลฯ)
+ *  - log ทุกความผิดพลาดผ่าน error_log() เพื่อไม่ให้ยอดเงินผิดแบบเงียบ ๆ
  * @param string      $token  JWT ของผู้ใช้ (เช่น token แอดมิน) — ถ้าไม่ส่งจะใช้ anon key
  * @return array{status:int, body:mixed}
  */
 function supabase_call($endpoint, $method = 'GET', $data = null, $extraHeaders = [], $token = null) {
-    $url = SUPABASE_URL . '/rest/v1/' . $endpoint;
-    $ch  = curl_init($url);
+    $url    = SUPABASE_URL . '/rest/v1/' . $endpoint;
+    $method = strtoupper($method);
 
     // ถ้า caller ส่ง Prefer มาเองแล้ว ไม่ต้องใส่ default ซ้ำ
     $hasPrefer = false;
@@ -32,18 +40,45 @@ function supabase_call($endpoint, $method = 'GET', $data = null, $extraHeaders =
     if (!$hasPrefer) $headers[] = 'Prefer: return=representation';
     $headers = array_merge($headers, $extraHeaders);
 
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-    if ($data !== null) {
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+    $payload     = ($data !== null) ? json_encode($data) : null;
+    $maxAttempts = ($method === 'GET') ? 3 : 1; // GET เท่านั้นที่ retry ได้อย่างปลอดภัย
+
+    $status = 0; $body = null; $curlErr = '';
+    for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CUSTOMREQUEST  => $method,
+            CURLOPT_HTTPHEADER     => $headers,
+            CURLOPT_CONNECTTIMEOUT => SB_CONNECT_TIMEOUT,
+            CURLOPT_TIMEOUT        => SB_TIMEOUT,
+        ]);
+        if ($payload !== null) curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+
+        $response = curl_exec($ch);
+        $status   = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr  = ($response === false) ? curl_error($ch) : '';
+        curl_close($ch);
+
+        $body = ($response === false) ? null : json_decode($response, true);
+
+        // ชั่วคราว = เครือข่ายล่ม / ไม่มี status / โดน rate-limit / server error
+        $transient = ($response === false) || $status === 0 || $status === 429 || $status >= 500;
+        if (!$transient) break;
+
+        if ($attempt < $maxAttempts) {
+            error_log("[OurBill] Supabase $method $endpoint ล้มเหลว (HTTP $status"
+                . ($curlErr ? ", curl: $curlErr" : '') . ") — retry $attempt/" . ($maxAttempts - 1));
+            usleep(200000 * $attempt); // backoff 0.2s, 0.4s
+        }
     }
 
-    $response = curl_exec($ch);
-    $status   = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+    if ($status === 0 || $status >= 400) {
+        $msg = (is_array($body) && isset($body['message'])) ? " msg: {$body['message']}" : '';
+        error_log("[OurBill] Supabase $method $endpoint => HTTP $status" . ($curlErr ? " curl: $curlErr" : '') . $msg);
+    }
 
-    return ['status' => (int) $status, 'body' => json_decode($response, true)];
+    return ['status' => $status, 'body' => $body];
 }
 
 /** เวอร์ชันสั้น คืนเฉพาะ body (เข้ากันได้กับโค้ดเดิม) */
@@ -64,7 +99,13 @@ function sb_delete($endpoint)         { return supabase_call($endpoint, 'DELETE'
  */
 function sb_rows($res) {
     if (!is_array($res) || empty($res)) return [];
-    if (array_keys($res) !== range(0, count($res) - 1)) return []; // ไม่ใช่ list = error object
+    if (array_keys($res) !== range(0, count($res) - 1)) {
+        // ไม่ใช่ list = error object -> log ไว้ กันยอดเงินผิด/เป็นศูนย์แบบเงียบเมื่อ query พลาด
+        if (isset($res['message']) || isset($res['code'])) {
+            error_log('[OurBill] sb_rows ได้ error object แทนรายการแถว: ' . json_encode($res, JSON_UNESCAPED_UNICODE));
+        }
+        return [];
+    }
     return array_values(array_filter($res, 'is_array'));
 }
 
@@ -92,11 +133,17 @@ function sb_upload_file($bucket, $path, $tmpFile, $mime) {
             'x-upsert: true',
         ],
         CURLOPT_POSTFIELDS     => file_get_contents($tmpFile),
+        CURLOPT_CONNECTTIMEOUT => SB_CONNECT_TIMEOUT,
+        CURLOPT_TIMEOUT        => 60, // อัปโหลดไฟล์ให้เวลามากกว่า REST ปกติ
     ]);
-    $res    = curl_exec($ch);
-    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $res     = curl_exec($ch);
+    $status  = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr = ($res === false) ? curl_error($ch) : '';
     curl_close($ch);
-    return ['status' => (int) $status, 'body' => json_decode($res, true)];
+    if ($status === 0 || $status >= 400) {
+        error_log("[OurBill] Supabase upload $bucket/$path => HTTP $status" . ($curlErr ? " curl: $curlErr" : ''));
+    }
+    return ['status' => $status, 'body' => ($res === false ? null : json_decode($res, true))];
 }
 
 /** URL สาธารณะของไฟล์ในบัคเก็ต public */
