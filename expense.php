@@ -45,6 +45,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($err || $upErr) {
                 $status_msg = $err ?: $upErr;
             } else {
+                if ($spent_at_raw !== '' && preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/', $spent_at_raw)) {
+                    $exUpdate['spent_at'] = $spent_at_raw . ':00+07:00';
+                }
                 sb_update('expenses?id=eq.' . $id, $exUpdate);
                 sb_delete('expense_splits?expense_id=eq.' . $id);
                 $payload = [];

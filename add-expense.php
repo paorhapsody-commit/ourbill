@@ -110,7 +110,7 @@ layout_head('เพิ่มรายจ่าย', 'add-expense.php');
             <div class="relative">
                 <i data-lucide="calendar-clock" class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none"></i>
                 <input type="datetime-local" name="spent_at" id="spent_at"
-                       value="<?= htmlspecialchars($_POST['spent_at'] ?? '') ?>"
+                       value="<?= htmlspecialchars($_POST['spent_at'] ?? date('Y-m-d\TH:i')) ?>"
                        class="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400 text-sm text-slate-700">
             </div>
         </div>

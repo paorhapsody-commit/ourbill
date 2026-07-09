@@ -175,8 +175,13 @@ CREATE POLICY allow_all ON friendships FOR ALL TO anon, authenticated USING (tru
 --  10. แนบรูปใบเสร็จในรายจ่าย (Supabase Storage)
 -- =========================================================
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS receipt_url TEXT;
--- วัน-เวลาที่จ่ายจริง (ผู้ใช้กำหนดเอง) — ถ้าไม่ระบุ DB จะใช้ NOW() อัตโนมัติ
-ALTER TABLE expenses ADD COLUMN IF NOT EXISTS spent_at TIMESTAMPTZ DEFAULT NOW();
+-- วัน-เวลาที่จ่ายจริง (ผู้ใช้กำหนดเอง)
+-- เพิ่ม column โดยไม่มี DEFAULT เพื่อกันไม่ให้ backfill row เดิมด้วย NOW()
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS spent_at TIMESTAMPTZ;
+-- backfill row เดิม: ใช้ created_at (UTC) แปลงเป็น TIMESTAMPTZ
+UPDATE expenses SET spent_at = created_at AT TIME ZONE 'UTC' WHERE spent_at IS NULL;
+-- ตั้ง DEFAULT NOW() สำหรับ row ใหม่ที่ไม่ระบุเวลา
+ALTER TABLE expenses ALTER COLUMN spent_at SET DEFAULT NOW();
 
 -- สร้าง bucket "receipts" แบบ public (เปิดดูรูปผ่าน URL ได้)
 INSERT INTO storage.buckets (id, name, public)
