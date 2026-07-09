@@ -40,8 +40,20 @@ if ($status === 'blocked') {
     exit;
 }
 if ($status !== 'approved') {
-    header('Location: login.php?pending=1&e=' . urlencode($email));
-    exit;
+    // ตรวจ invite key ใน session — ถ้าถูกต้องและยังใช้งานได้ → approve อัตโนมัติ
+    $inviteKey = $_SESSION['invite_key'] ?? '';
+    if ($inviteKey !== '') {
+        unset($_SESSION['invite_key']);
+        $acct = account_find($email);
+        if ($acct && invite_verify_and_use($inviteKey, (int) $acct['id'])) {
+            sb_update('app_accounts?id=eq.' . (int) $acct['id'], ['status' => 'approved']);
+            $status = 'approved';
+        }
+    }
+    if ($status !== 'approved') {
+        header('Location: login.php?pending=1&e=' . urlencode($email));
+        exit;
+    }
 }
 
 // อนุมัติแล้ว — สร้าง/หาแถวสมาชิก แล้วเก็บ session

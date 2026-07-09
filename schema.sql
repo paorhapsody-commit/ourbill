@@ -241,3 +241,21 @@ DROP POLICY IF EXISTS allow_all ON installments;
 DROP POLICY IF EXISTS allow_all ON installment_payments;
 CREATE POLICY allow_all ON installments         FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
 CREATE POLICY allow_all ON installment_payments FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);
+
+-- =========================================================
+--  13. ลิงก์เชิญเพื่อน (invite_keys)
+--      1 key = ใช้ได้ครั้งเดียว เมื่อใช้แล้ว used_at/used_by จะถูกบันทึก
+--      ผู้รับเชิญที่ล็อกอินผ่านลิงก์นี้จะได้รับการ approve อัตโนมัติ
+-- =========================================================
+CREATE TABLE IF NOT EXISTS invite_keys (
+    id         SERIAL PRIMARY KEY,
+    key        TEXT UNIQUE NOT NULL,
+    created_by INT REFERENCES app_accounts(id) ON DELETE CASCADE,
+    used_by    INT REFERENCES app_accounts(id) ON DELETE SET NULL,
+    used_at    TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE invite_keys ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS allow_all ON invite_keys;
+CREATE POLICY allow_all ON invite_keys FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);

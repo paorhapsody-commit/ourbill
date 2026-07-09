@@ -248,6 +248,48 @@ function selectable_members($accountId) {
     return sb_rows($rows);
 }
 
+/* =========================================================
+ *  ระบบลิงก์เชิญ (invite_keys)
+ * ========================================================= */
+
+/** สร้าง invite key ใหม่ สำหรับบัญชีที่อนุมัติแล้ว — คืน row หรือ null */
+function invite_create($accountId) {
+    $key = bin2hex(random_bytes(16)); // 32 hex chars, entropy 128-bit
+    $res = sb_insert('invite_keys', [
+        'key'        => $key,
+        'created_by' => (int) $accountId,
+    ]);
+    return $res['body'][0] ?? null;
+}
+
+/**
+ * ยืนยันและใช้ invite key (single-use, atomic)
+ * คืน true ถ้า key ถูกต้อง + ยังไม่เคยใช้ + บันทึกสำเร็จ
+ */
+function invite_verify_and_use($key, $newAccountId) {
+    $key = preg_replace('/[^a-f0-9]/i', '', (string) $key);
+    if (strlen($key) !== 32) return false;
+    $rows = sb_rows(sb_get('invite_keys?key=eq.' . urlencode($key) . '&used_at=is.null&select=id&limit=1'));
+    if (empty($rows)) return false;
+    $inviteId = (int) $rows[0]['id'];
+    // PATCH เฉพาะเมื่อ used_at ยังเป็น null → กัน race condition
+    $res  = sb_update(
+        'invite_keys?id=eq.' . $inviteId . '&used_at=is.null',
+        ['used_by' => (int) $newAccountId, 'used_at' => date('Y-m-d\TH:i:sP')]
+    );
+    $body = $res['body'] ?? null;
+    return is_array($body) && !empty($body);
+}
+
+/** ดึงรายการ invite keys ที่สร้างโดยบัญชีนี้ (ล่าสุดก่อน) */
+function invite_list($accountId) {
+    return sb_rows(sb_get(
+        'invite_keys?created_by=eq.' . (int) $accountId
+        . '&select=id,key,created_at,used_at,used_acc:used_by(name,email)'
+        . '&order=created_at.desc&limit=20'
+    ));
+}
+
 /**
  * จำนวนงวดที่ "ครบกำหนดแล้ว" ณ วันนี้ — ยึดวันเดียวกันของทุกเดือนจาก start_date
  * งวดแรกครบกำหนด ณ วันเริ่ม, งวดถัดไปทุกๆ 1 เดือน (วันเดียวกัน) จนครบ $months

@@ -4,6 +4,14 @@ require_once 'auth.php';
 // ล็อกอินอยู่แล้ว ส่งเข้าหน้าหลัก
 if (is_logged_in()) { header('Location: index.php'); exit; }
 
+// เก็บ invite key ใน session เพื่อใช้ใน callback.php หลังล็อกอิน
+if (isset($_GET['invite'])) {
+    $invKey = preg_replace('/[^a-f0-9]/i', '', (string) ($_GET['invite'] ?? ''));
+    if (strlen($invKey) === 32) {
+        $_SESSION['invite_key'] = $invKey;
+    }
+}
+
 $errors = [
     'cancel'  => 'คุณยกเลิกการเข้าสู่ระบบ',
     'state'   => 'เซสชันหมดอายุ กรุณาลองใหม่อีกครั้ง',
