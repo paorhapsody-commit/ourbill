@@ -20,12 +20,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($action === 'edit') {
-        $title   = trim($_POST['title'] ?? '');
-        $total   = round((float) ($_POST['total_amount'] ?? 0), 2);
-        $paid_by = intval($_POST['paid_by'] ?? 0);
-        $mode    = ($_POST['mode'] ?? 'equal') === 'custom' ? 'custom' : 'equal';
-        $picked  = $_POST['split_with'] ?? [];
-        $amounts = $_POST['amount'] ?? [];
+        $title        = trim($_POST['title'] ?? '');
+        $total        = round((float) ($_POST['total_amount'] ?? 0), 2);
+        $paid_by      = intval($_POST['paid_by'] ?? 0);
+        $mode         = ($_POST['mode'] ?? 'equal') === 'custom' ? 'custom' : 'equal';
+        $picked       = $_POST['split_with'] ?? [];
+        $amounts      = $_POST['amount'] ?? [];
+        $spent_at_raw = trim($_POST['spent_at'] ?? '');
 
         if ($title === '' || $total <= 0 || $paid_by <= 0) {
             $status_msg = 'กรุณากรอกข้อมูลให้ครบถ้วน';
@@ -111,7 +112,7 @@ layout_head('รายละเอียดรายจ่าย', '');
                 <span class="font-semibold text-slate-700"><?= htmlspecialchars($exp['users']['name'] ?? 'ไม่ระบุ') ?></span>
             </div>
             <div class="flex items-center gap-2 text-slate-400">
-                <i data-lucide="calendar" class="w-4 h-4"></i> <?= date('d/m/Y H:i', strtotime($exp['created_at'])) ?>
+                <i data-lucide="calendar" class="w-4 h-4"></i> <?= date('d/m/Y H:i', ts_thai($exp['spent_at'] ?? $exp['created_at'])) ?>
             </div>
         </div>
     </div>
@@ -168,6 +169,18 @@ layout_head('รายละเอียดรายจ่าย', '');
                     <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold">฿</span>
                     <input type="number" name="total_amount" id="total" step="0.01" min="0.01" required value="<?= htmlspecialchars($exp['total_amount']) ?>"
                            class="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400 font-bold text-slate-800">
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-slate-600 mb-1.5">วัน-เวลาที่จ่าย</label>
+                <div class="relative">
+                    <i data-lucide="calendar-clock" class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none"></i>
+                    <?php
+                        $spentTs  = ts_thai($exp['spent_at'] ?? $exp['created_at']);
+                        $spentVal = $spentTs ? date('Y-m-d\TH:i', $spentTs) : '';
+                    ?>
+                    <input type="datetime-local" name="spent_at" value="<?= htmlspecialchars($spentVal) ?>"
+                           class="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400 text-sm text-slate-700">
                 </div>
             </div>
             <div>

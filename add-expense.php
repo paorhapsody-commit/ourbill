@@ -11,12 +11,13 @@ $status_msg = '';
 $status_ok  = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $title   = trim($_POST['title'] ?? '');
-    $total   = round((float) ($_POST['total_amount'] ?? 0), 2);
-    $paid_by = intval($_POST['paid_by'] ?? 0);
-    $mode    = ($_POST['mode'] ?? 'equal') === 'custom' ? 'custom' : 'equal';
-    $picked  = $_POST['split_with'] ?? [];          // ids ที่ติ๊กร่วมหาร
-    $amounts = $_POST['amount'] ?? [];               // amount[uid] (โหมด custom)
+    $title       = trim($_POST['title'] ?? '');
+    $total       = round((float) ($_POST['total_amount'] ?? 0), 2);
+    $paid_by     = intval($_POST['paid_by'] ?? 0);
+    $mode        = ($_POST['mode'] ?? 'equal') === 'custom' ? 'custom' : 'equal';
+    $picked      = $_POST['split_with'] ?? [];          // ids ที่ติ๊กร่วมหาร
+    $amounts     = $_POST['amount'] ?? [];               // amount[uid] (โหมด custom)
+    $spent_at_raw = trim($_POST['spent_at'] ?? '');
 
     $picked = array_values(array_filter(array_map('intval', $picked)));
 
@@ -28,10 +29,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($err || $upErr) {
             $status_msg = $err ?: $upErr;
         } else {
-            $res = sb_insert('expenses', [
+            $insertData = [
                 'title' => $title, 'total_amount' => $total, 'paid_by' => $paid_by,
                 'receipt_url' => $receiptUrl,
-            ]);
+            ];
+            // วัน-เวลาที่ผู้ใช้ระบุ (datetime-local ส่งมาเป็นเวลาไทย เพิ่ม +07:00 ก่อนบันทึก)
+            if ($spent_at_raw !== '' && preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/', $spent_at_raw)) {
+                $insertData['spent_at'] = $spent_at_raw . ':00+07:00';
+            }
+            $res = sb_insert('expenses', $insertData);
             $expense_id = $res['body'][0]['id'] ?? null;
 
             if ($expense_id) {
@@ -93,6 +99,19 @@ layout_head('เพิ่มรายจ่าย', 'add-expense.php');
                 <input type="number" name="total_amount" id="total" step="0.01" min="0.01" required
                        value="<?= htmlspecialchars($_POST['total_amount'] ?? '') ?>" placeholder="0.00"
                        class="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400 font-bold text-slate-800">
+            </div>
+        </div>
+
+        <!-- วัน-เวลาที่จ่าย -->
+        <div>
+            <label class="block text-sm font-semibold text-slate-600 mb-1.5">
+                วัน-เวลาที่จ่าย <span class="text-slate-400 font-normal">(ไม่กำหนด = ใช้เวลาปัจจุบัน)</span>
+            </label>
+            <div class="relative">
+                <i data-lucide="calendar-clock" class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none"></i>
+                <input type="datetime-local" name="spent_at" id="spent_at"
+                       value="<?= htmlspecialchars($_POST['spent_at'] ?? '') ?>"
+                       class="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400 text-sm text-slate-700">
             </div>
         </div>
 

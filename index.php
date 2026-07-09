@@ -264,7 +264,7 @@ layout_head('หน้าหลัก', 'index.php');
                 <p class="font-semibold text-slate-800 truncate"><?= htmlspecialchars($item['title']) ?></p>
                 <p class="text-xs text-slate-400">
                     จ่ายก่อนโดย <?= htmlspecialchars($item['users']['name'] ?? 'ไม่ระบุ') ?> ·
-                    <?= date('d/m/y H:i', strtotime($item['created_at'])) ?>
+                    <?= date('d/m/y H:i', ts_thai($item['spent_at'] ?? $item['created_at'])) ?>
                 </p>
             </div>
             <span class="ml-auto font-bold text-slate-800 shrink-0"><?= baht($item['total_amount']) ?> ฿</span>

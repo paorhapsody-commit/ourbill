@@ -130,7 +130,7 @@ layout_head($friendName, 'friends.php');
                     <p class="text-sm font-semibold text-slate-700 truncate"><?= htmlspecialchars($t['title']) ?></p>
                     <p class="text-xs text-slate-400">
                         <?= htmlspecialchars($t['sub']) ?>
-                        <?php if (!empty($t['ts'])): ?> · <?= date('d/m/y H:i', strtotime($t['ts'])) ?><?php endif; ?>
+                        <?php if (!empty($t['ts'])): ?> · <?= date('d/m/y H:i', ts_thai($t['ts'])) ?><?php endif; ?>
                     </p>
                 </div>
                 <span class="font-bold text-sm shrink-0 <?= abs($imp) < 0.009 ? 'text-slate-400' : ($pos ? 'text-emerald-600' : 'text-rose-500') ?>">

@@ -326,21 +326,21 @@ function calendar_events($myMember) {
     if ($me <= 0) return [];
     $ev = [];
     $add = function (&$ev, $ts, $icon, $title, $sub, $amount, $sign) {
-        $d = substr((string) $ts, 0, 10);
+        $d = thai_date($ts);
         if (!$d) return;
         $ev[] = ['date' => $d, 'icon' => $icon, 'title' => $title, 'sub' => $sub,
                  'amount' => round((float) $amount, 2), 'sign' => $sign];
     };
 
     // บิลที่เราจ่ายก่อน
-    foreach (sb_rows(sb_get('expenses?paid_by=eq.' . $me . '&select=id,title,total_amount,created_at')) as $e) {
-        $add($ev, $e['created_at'] ?? '', 'receipt', $e['title'] ?? 'รายจ่าย', 'เราจ่ายก่อน', $e['total_amount'] ?? 0, '');
+    foreach (sb_rows(sb_get('expenses?paid_by=eq.' . $me . '&select=id,title,total_amount,created_at,spent_at')) as $e) {
+        $add($ev, $e['spent_at'] ?? $e['created_at'] ?? '', 'receipt', $e['title'] ?? 'รายจ่าย', 'เราจ่ายก่อน', $e['total_amount'] ?? 0, '');
     }
     // บิลที่เพื่อนจ่ายก่อน + เรามีส่วนหาร
-    foreach (sb_rows(sb_get('expense_splits?user_id=eq.' . $me . '&select=amount,expenses(id,title,created_at,paid_by)')) as $s) {
+    foreach (sb_rows(sb_get('expense_splits?user_id=eq.' . $me . '&select=amount,expenses(id,title,created_at,spent_at,paid_by)')) as $s) {
         $exp = $s['expenses'] ?? null;
         if (!$exp || (int) ($exp['paid_by'] ?? 0) === $me) continue;
-        $add($ev, $exp['created_at'] ?? '', 'receipt', $exp['title'] ?? 'รายจ่าย', 'ส่วนแบ่งของเรา', $s['amount'] ?? 0, '');
+        $add($ev, $exp['spent_at'] ?? $exp['created_at'] ?? '', 'receipt', $exp['title'] ?? 'รายจ่าย', 'ส่วนแบ่งของเรา', $s['amount'] ?? 0, '');
     }
     // เคลียร์หนี้
     foreach (sb_rows(sb_get('settlements?or=(from_user.eq.' . $me . ',to_user.eq.' . $me . ')&select=from_user,to_user,amount,created_at,fromu:from_user(name),tou:to_user(name)')) as $st) {
@@ -457,17 +457,17 @@ function friend_timeline($myMember, $friendId) {
     $ev = [];
 
     // (1) บิลที่เราจ่ายก่อน + เพื่อนมีส่วนหาร -> เพื่อนติดเรา
-    foreach (sb_rows(sb_get('expenses?paid_by=eq.' . $me . '&select=id,title,created_at,expense_splits(user_id,amount)')) as $e) {
+    foreach (sb_rows(sb_get('expenses?paid_by=eq.' . $me . '&select=id,title,created_at,spent_at,expense_splits(user_id,amount)')) as $e) {
         foreach (($e['expense_splits'] ?? []) as $s) {
             if ((int) $s['user_id'] !== $fr) continue;
-            $ev[] = ['ts' => $e['created_at'] ?? '', 'icon' => 'receipt', 'title' => 'บิล: ' . ($e['title'] ?? '-'),
+            $ev[] = ['ts' => $e['spent_at'] ?? $e['created_at'] ?? '', 'icon' => 'receipt', 'title' => 'บิล: ' . ($e['title'] ?? '-'),
                      'sub' => 'เราจ่ายก่อน · ส่วนแบ่งของเพื่อน', 'impact' => (float) $s['amount']];
         }
     }
     // (2) บิลที่เพื่อนจ่ายก่อน + เรามีส่วนหาร -> เราติดเพื่อน
-    foreach (sb_rows(sb_get('expense_splits?user_id=eq.' . $me . '&select=amount,expenses(id,title,created_at,paid_by)')) as $s) {
+    foreach (sb_rows(sb_get('expense_splits?user_id=eq.' . $me . '&select=amount,expenses(id,title,created_at,spent_at,paid_by)')) as $s) {
         if ((int) ($s['expenses']['paid_by'] ?? 0) !== $fr) continue;
-        $ev[] = ['ts' => $s['expenses']['created_at'] ?? '', 'icon' => 'receipt', 'title' => 'บิล: ' . ($s['expenses']['title'] ?? '-'),
+        $ev[] = ['ts' => $s['expenses']['spent_at'] ?? $s['expenses']['created_at'] ?? '', 'icon' => 'receipt', 'title' => 'บิล: ' . ($s['expenses']['title'] ?? '-'),
                  'sub' => 'เพื่อนจ่ายก่อน · ส่วนแบ่งของเรา', 'impact' => -(float) $s['amount']];
     }
     // (3) เคลียร์หนี้ (settlements)

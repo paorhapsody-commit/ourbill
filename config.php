@@ -3,6 +3,9 @@
  *  OurBill / FairShare — Config & Supabase helpers
  * ========================================================= */
 
+// เขตเวลาไทย — ต้องตั้งก่อน date()/strtotime() ทุกที่
+date_default_timezone_set('Asia/Bangkok');
+
 /* ค่าลับ Supabase: ใช้ Environment Variable ก่อน (สำหรับ deploy)
  * ถ้าไม่มี ENV ค่อย fallback ไป config.local.php (สำหรับเครื่อง local — ไม่ขึ้น git) */
 if (is_file(__DIR__ . '/config.local.php')) {
@@ -339,3 +342,19 @@ function avatar($id, $name, $size = 'w-10 h-10 text-sm') {
 }
 
 function baht($n) { return number_format((float) $n, 2); }
+
+/**
+ * แปลง timestamp จาก Supabase เป็น Unix timestamp ในเขตเวลาไทย
+ * รองรับทั้ง TIMESTAMP (ไม่มี tz → treat เป็น UTC) และ TIMESTAMPTZ (+00:00)
+ */
+function ts_thai($ts) {
+    if (!$ts) return 0;
+    $ts = (string) $ts;
+    if (!preg_match('/[+\-]\d{2}:\d{2}$|Z$/i', $ts)) $ts .= '+00:00';
+    return (int) strtotime($ts);
+}
+/** คืนวันที่ Y-m-d ในเขตเวลาไทย จาก timestamp ของ Supabase */
+function thai_date($ts) {
+    $u = ts_thai($ts);
+    return $u ? date('Y-m-d', $u) : '';
+}

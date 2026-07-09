@@ -175,6 +175,8 @@ CREATE POLICY allow_all ON friendships FOR ALL TO anon, authenticated USING (tru
 --  10. แนบรูปใบเสร็จในรายจ่าย (Supabase Storage)
 -- =========================================================
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS receipt_url TEXT;
+-- วัน-เวลาที่จ่ายจริง (ผู้ใช้กำหนดเอง) — ถ้าไม่ระบุ DB จะใช้ NOW() อัตโนมัติ
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS spent_at TIMESTAMPTZ DEFAULT NOW();
 
 -- สร้าง bucket "receipts" แบบ public (เปิดดูรูปผ่าน URL ได้)
 INSERT INTO storage.buckets (id, name, public)
