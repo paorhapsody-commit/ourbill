@@ -16,7 +16,11 @@ function fs_row($id) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $me > 0) {
     $action = $_POST['action'] ?? '';
 
-    if ($action === 'request') {
+    if ($action === 'invite') {
+        invite_create($me);
+        header('Location: friends.php?inv=1'); exit;
+
+    } elseif ($action === 'request') {
         $target = (int) ($_POST['target_account'] ?? 0);
         if ($target > 0 && $target !== $me) {
             // กันส่งซ้ำถ้ามีความสัมพันธ์อยู่แล้ว (ทั้งสองทิศ)
@@ -52,6 +56,11 @@ foreach (friend_links($me) as $l) {
     elseif ((int) $l['addressee'] === $me)    $incoming[] = $item;
     else                                       $outgoing[] = $item;
 }
+
+$inviteKeys = $me > 0 ? invite_list($me) : [];
+$_proto     = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https')) ? 'https' : 'http';
+$inviteBase = $_proto . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost')
+            . rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '')), '/') . '/login.php?invite=';
 
 layout_head('เพื่อน', 'friends.php');
 
@@ -212,6 +221,80 @@ function acc_avatar($acc, $size = 'w-11 h-11') {
         if (!box.contains(e.target) && e.target !== input) box.classList.add('hidden');
     });
 })();
+</script>
+
+<!-- ===== ลิงก์เชิญเพื่อน ===== -->
+<div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mt-6">
+    <div class="flex items-center justify-between mb-4">
+        <h2 class="font-bold text-slate-700 flex items-center gap-2">
+            <i data-lucide="link" class="w-5 h-5 text-emerald-500"></i> ลิงก์เชิญเพื่อน
+        </h2>
+        <span class="text-xs text-slate-400">1 ลิงก์ = ใช้ได้ 1 ครั้ง</span>
+    </div>
+
+    <?php if (isset($_GET['inv'])): ?>
+        <div class="mb-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-xl flex items-center gap-2">
+            <i data-lucide="check-circle" class="w-4 h-4 shrink-0"></i> สร้างลิงก์เชิญใหม่แล้ว — คัดลอกด้านล่างได้เลย
+        </div>
+    <?php endif; ?>
+
+    <form method="POST">
+        <input type="hidden" name="action" value="invite">
+        <button type="submit"
+                class="w-full flex items-center justify-center gap-2 bg-gradient-to-br from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white font-bold py-2.5 rounded-xl shadow-md shadow-emerald-100 transition text-sm">
+            <i data-lucide="link" class="w-4 h-4"></i> สร้างลิงก์เชิญใหม่
+        </button>
+    </form>
+
+    <?php if (!empty($inviteKeys)): ?>
+        <div class="mt-4 space-y-2">
+            <?php foreach ($inviteKeys as $inv):
+                $used     = !empty($inv['used_at']);
+                $invUrl   = $inviteBase . $inv['key'];
+                $usedName = $inv['used_acc']['name'] ?? $inv['used_acc']['email'] ?? null;
+            ?>
+                <div class="rounded-xl border <?= $used ? 'border-slate-100 bg-slate-50' : 'border-emerald-100 bg-emerald-50/40' ?> p-3">
+                    <div class="flex items-center gap-2">
+                        <span class="grid place-items-center w-7 h-7 rounded-lg <?= $used ? 'bg-slate-200 text-slate-400' : 'bg-emerald-100 text-emerald-600' ?> shrink-0">
+                            <i data-lucide="<?= $used ? 'check' : 'link' ?>" class="w-3.5 h-3.5"></i>
+                        </span>
+                        <div class="min-w-0 flex-1">
+                            <?php if ($used): ?>
+                                <p class="text-xs text-slate-400 truncate">
+                                    ใช้แล้วโดย <?= htmlspecialchars($usedName ?? 'ผู้ใช้') ?>
+                                    · <?= date('d/m/y H:i', ts_thai($inv['used_at'])) ?>
+                                </p>
+                            <?php else: ?>
+                                <input type="text" readonly value="<?= htmlspecialchars($invUrl) ?>"
+                                       onclick="this.select()"
+                                       class="w-full text-xs text-slate-600 bg-transparent border-none outline-none cursor-pointer truncate font-mono">
+                            <?php endif; ?>
+                        </div>
+                        <?php if (!$used): ?>
+                            <button type="button" onclick="copyInvite(this, '<?= htmlspecialchars($invUrl, ENT_QUOTES) ?>')"
+                                    class="shrink-0 text-xs font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-emerald-100 transition">
+                                <i data-lucide="copy" class="w-3.5 h-3.5"></i> คัดลอก
+                            </button>
+                        <?php endif; ?>
+                    </div>
+                    <p class="text-[11px] text-slate-400 mt-1 pl-9">สร้าง <?= date('d/m/y H:i', ts_thai($inv['created_at'])) ?></p>
+                </div>
+            <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
+</div>
+
+<script>
+function copyInvite(btn, url) {
+    navigator.clipboard.writeText(url).then(function () {
+        const orig = btn.innerHTML;
+        btn.innerHTML = '<i data-lucide="check" class="w-3.5 h-3.5"></i> คัดลอกแล้ว';
+        if (window.lucide) lucide.createIcons();
+        setTimeout(function () { btn.innerHTML = orig; if (window.lucide) lucide.createIcons(); }, 2000);
+    }).catch(function () {
+        prompt('คัดลอกลิงก์เชิญ:', url);
+    });
+}
 </script>
 
 <?php endif; // $me > 0 ?>
