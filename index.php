@@ -6,7 +6,21 @@ require_once '_layout.php';
 
 $myMember = (int) ($_SESSION['user']['member_id'] ?? 0);
 $friends  = unified_balances($myMember);   // ยอดสุทธิรวมทุกฟังก์ชัน ต่อเพื่อน
-$ledger   = sb_get('expenses?select=*,users(name)&order=created_at.desc&limit=50') ?: [];
+
+// รายจ่ายล่าสุดเฉพาะที่เกี่ยวข้องกับเรา (จ่ายก่อน หรือ อยู่ในรายการหาร)
+$splitExpenseIds = [];
+if ($myMember) {
+    $splitRows = sb_rows(sb_get('expense_splits?user_id=eq.' . $myMember . '&select=expense_id'));
+    $splitExpenseIds = array_unique(array_column($splitRows, 'expense_id'));
+}
+if ($myMember && !empty($splitExpenseIds)) {
+    $inList = implode(',', $splitExpenseIds);
+    $ledger = sb_rows(sb_get('expenses?select=*,users(name)&or=(paid_by.eq.' . $myMember . ',id.in.(' . $inList . '))&order=created_at.desc&limit=50'));
+} elseif ($myMember) {
+    $ledger = sb_rows(sb_get('expenses?select=*,users(name)&paid_by=eq.' . $myMember . '&order=created_at.desc&limit=50'));
+} else {
+    $ledger = [];
+}
 $dueAlerts = installments_due_alerts($myMember);  // ผ่อนที่ถึงกำหนดงวดแล้ว
 
 // รายการสำหรับปฏิทิน จัดกลุ่มตามวัน
