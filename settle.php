@@ -162,7 +162,7 @@ layout_head('เคลียร์หนี้', 'settle.php');
                     <i data-lucide="arrow-right" class="inline w-3.5 h-3.5 text-slate-300"></i>
                     <b><?= htmlspecialchars($h['to']['name'] ?? '?') ?></b>
                 </p>
-                <p class="text-xs text-slate-400"><?= date('d/m/y H:i', strtotime($h['created_at'])) ?><?= $h['note'] ? ' · ' . htmlspecialchars($h['note']) : '' ?></p>
+                <p class="text-xs text-slate-400"><?= date('d/m/y H:i', ts_thai($h['created_at'])) ?><?= $h['note'] ? ' · ' . htmlspecialchars($h['note']) : '' ?></p>
             </div>
             <span class="ml-auto font-bold text-emerald-600 shrink-0"><?= baht($h['amount']) ?> ฿</span>
         </div>
