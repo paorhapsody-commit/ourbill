@@ -343,6 +343,17 @@ function avatar($id, $name, $size = 'w-10 h-10 text-sm') {
 
 function baht($n) { return number_format((float) $n, 2); }
 
+/** ยอดพร้อมเครื่องหมาย + / − (ศูนย์ไม่ใส่เครื่องหมาย) — ใช้กับยอดที่มีทิศทาง เช่น ผลต่อยอดสุทธิ */
+function signed_baht($v) {
+    $v = (float) $v;
+    return abs($v) < 0.009 ? '0.00' : (($v > 0 ? '+' : '−') . baht(abs($v)));
+}
+/** class สีตามทิศทางยอด: + = เพื่อนติดเรา (เขียว) · − = เราติดเพื่อน (แดง) · 0 = เทา */
+function amount_tone($v) {
+    $v = (float) $v;
+    return abs($v) < 0.009 ? 'text-slate-400' : ($v > 0 ? 'text-emerald-600' : 'text-rose-500');
+}
+
 /**
  * แปลง timestamp จาก Supabase เป็น Unix timestamp ในเขตเวลาไทย
  * รองรับทั้ง TIMESTAMP (ไม่มี tz → treat เป็น UTC) และ TIMESTAMPTZ (+00:00)

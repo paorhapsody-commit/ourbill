@@ -27,16 +27,26 @@ $dueAlerts = installments_due_alerts($myMember);  // ผ่อนที่ถึ
 $calByDate = [];
 foreach (calendar_events($myMember) as $e) { $calByDate[$e['date']][] = $e; }
 
-// สรุปจากมุมของเรา
-$owedToMe = 0; $iOwe = 0; $installRecv = 0; $held = 0;
+/* สรุปจากมุมของเรา
+ * ยอดสุทธิ (เพื่อนติดเรา / เราติดเพื่อน) = ผลรวมของ 3 ประเภทข้างล่าง
+ * ประเภทเก็บเป็นค่ามีเครื่องหมาย: + = เพื่อนติดเรา | − = เราติดเพื่อน (ทิศเดียวกับ friend.php) */
+$owedToMe = 0; $iOwe = 0; $nOwedToMe = 0; $nIOwe = 0;
+$sumBill  = 0; $sumHold = 0; $sumInst = 0;
 foreach ($friends as $f) {
-    if ($f['net'] > 0.009)      $owedToMe += $f['net'];
-    elseif ($f['net'] < -0.009) $iOwe     += -$f['net'];
-    if ($f['installment'] > 0)  $installRecv += $f['installment'];
+    if ($f['net'] > 0.009)      { $owedToMe += $f['net'];  $nOwedToMe++; }
+    elseif ($f['net'] < -0.009) { $iOwe     += -$f['net']; $nIOwe++; }
+    $sumBill += $f['bill'] + $f['settle'];   // ค่าบิลที่ยังไม่ได้เคลียร์
+    $sumHold += $f['holding'];               // เงินที่ถือไว้ (สุทธิสองทาง)
+    $sumInst += $f['installment'];           // งวดผ่อนที่ถึงกำหนดแล้วแต่ยังไม่จ่าย
 }
+
+/* ยอดดิบสองทางของ "เงินที่ถือไว้" — ใช้อธิบายว่าทำไมยอดสุทธิถึงไม่เท่ากับที่เราถือไว้จริง
+ * (เดิมการ์ดหน้าแรกโชว์ยอดดิบฝั่งเดียว เลยไม่ตรงกับหน้าเงินเพื่อนที่หักลบสองทาง) */
+$heldByMe = 0; $heldByFriends = 0;
 if ($myMember) {
-    foreach (sb_rows(sb_get('holdings?holder_id=eq.' . $myMember . '&select=amount')) as $h) {
-        $held += (float) $h['amount'];
+    foreach (sb_rows(sb_get('holdings?or=(holder_id.eq.' . $myMember . ',owner_id.eq.' . $myMember . ')&select=holder_id,amount')) as $h) {
+        if ((int) $h['holder_id'] === $myMember) $heldByMe      += (float) $h['amount'];
+        else                                     $heldByFriends += (float) $h['amount'];
     }
 }
 
@@ -70,32 +80,60 @@ layout_head('หน้าหลัก', 'index.php');
 </div>
 <?php endif; ?>
 
-<!-- Summary stat cards (มุมของเรา) -->
-<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-7">
-    <div class="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+<!-- ===== ยอดสุทธิ (รวมทุกอย่างแล้ว) ===== -->
+<div class="grid grid-cols-2 gap-3 md:gap-4 mb-3">
+    <a href="settle.php" class="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm hover:border-emerald-200 transition">
         <div class="flex items-center gap-2 text-slate-400 text-xs font-medium mb-1.5">
             <i data-lucide="trending-up" class="w-4 h-4"></i> เพื่อนติดเรา
         </div>
         <p class="text-2xl font-extrabold text-emerald-600"><?= baht($owedToMe) ?> <span class="text-sm font-medium text-slate-400">฿</span></p>
-    </div>
-    <div class="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+        <p class="text-[11px] text-slate-400 mt-0.5"><?= $nOwedToMe ? 'รอรับจากเพื่อน ' . $nOwedToMe . ' คน' : 'ไม่มีใครติดเรา' ?></p>
+    </a>
+    <a href="settle.php" class="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm hover:border-rose-200 transition">
         <div class="flex items-center gap-2 text-slate-400 text-xs font-medium mb-1.5">
             <i data-lucide="trending-down" class="w-4 h-4"></i> เราติดเพื่อน
         </div>
         <p class="text-2xl font-extrabold text-rose-500"><?= baht($iOwe) ?> <span class="text-sm font-medium text-slate-400">฿</span></p>
+        <p class="text-[11px] text-slate-400 mt-0.5"><?= $nIOwe ? 'ต้องจ่ายคืนเพื่อน ' . $nIOwe . ' คน' : 'ไม่ติดใครแล้ว' ?></p>
+    </a>
+</div>
+
+<!-- ===== ยอดข้างบนมาจากไหน (ส่วนประกอบ ไม่ใช่ยอดเพิ่ม) ===== -->
+<div class="bg-slate-50 border border-slate-100 rounded-2xl p-3 mb-7">
+    <p class="text-[11px] font-semibold text-slate-400 px-1 mb-2">
+        ยอดข้างบนมาจากไหน — <span class="text-emerald-600">+ เพื่อนติดเรา</span> · <span class="text-rose-500">− เราติดเพื่อน</span>
+        <span class="text-slate-300">(รวมอยู่ในยอดข้างบนแล้ว ไม่ใช่ยอดที่ต้องบวกเพิ่ม)</span>
+    </p>
+    <div class="grid grid-cols-3 gap-2">
+        <a href="settle.php" class="bg-white rounded-xl p-3 border border-slate-100 hover:border-emerald-200 transition">
+            <div class="flex items-center gap-1.5 text-slate-400 text-[11px] font-medium mb-1">
+                <i data-lucide="receipt" class="w-3.5 h-3.5"></i> ค่าบิล
+            </div>
+            <p class="text-lg font-extrabold leading-tight <?= amount_tone($sumBill) ?>"><?= signed_baht($sumBill) ?></p>
+        </a>
+        <a href="holdings.php" class="bg-white rounded-xl p-3 border border-slate-100 hover:border-emerald-200 transition">
+            <div class="flex items-center gap-1.5 text-slate-400 text-[11px] font-medium mb-1">
+                <i data-lucide="piggy-bank" class="w-3.5 h-3.5"></i> เงินที่ถือไว้
+            </div>
+            <p class="text-lg font-extrabold leading-tight <?= amount_tone($sumHold) ?>"><?= signed_baht($sumHold) ?></p>
+        </a>
+        <a href="installments.php" class="bg-white rounded-xl p-3 border border-slate-100 hover:border-emerald-200 transition">
+            <div class="flex items-center gap-1.5 text-slate-400 text-[11px] font-medium mb-1">
+                <i data-lucide="calendar-clock" class="w-3.5 h-3.5"></i> ผ่อนถึงกำหนด
+            </div>
+            <p class="text-lg font-extrabold leading-tight <?= amount_tone($sumInst) ?>"><?= signed_baht($sumInst) ?></p>
+        </a>
     </div>
-    <a href="holdings.php" class="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm hover:shadow-md transition">
-        <div class="flex items-center gap-2 text-slate-400 text-xs font-medium mb-1.5">
-            <i data-lucide="piggy-bank" class="w-4 h-4"></i> เงินเพื่อนที่ถือไว้
-        </div>
-        <p class="text-2xl font-extrabold text-slate-800"><?= baht($held) ?> <span class="text-sm font-medium text-slate-400">฿</span></p>
-    </a>
-    <a href="installments.php" class="bg-gradient-to-br from-emerald-400 to-teal-500 rounded-2xl p-4 shadow-lg shadow-emerald-200 text-white hover:from-emerald-500 hover:to-teal-600 transition">
-        <div class="flex items-center gap-2 text-emerald-50 text-xs font-medium mb-1.5">
-            <i data-lucide="calendar-clock" class="w-4 h-4"></i> ผ่อนค้างรับ
-        </div>
-        <p class="text-2xl font-extrabold"><?= baht($installRecv) ?> <span class="text-sm font-medium text-emerald-100">฿</span></p>
-    </a>
+
+    <?php if ($heldByMe > 0.009 || $heldByFriends > 0.009): ?>
+        <!-- อธิบายว่ายอด "เงินที่ถือไว้" สุทธิมาจากการหักลบสองทาง ไม่ใช่จำนวนเงินที่ถืออยู่จริง -->
+        <p class="text-[11px] text-slate-400 px-1 mt-2 flex flex-wrap gap-x-3">
+            <span><i data-lucide="corner-down-right" class="w-3 h-3 inline-block align-middle text-slate-300"></i>
+                  เราถือเงินเพื่อนไว้ <b class="text-slate-500"><?= baht($heldByMe) ?> ฿</b></span>
+            <span>เพื่อนถือเงินเราไว้ <b class="text-slate-500"><?= baht($heldByFriends) ?> ฿</b></span>
+            <span class="text-slate-300">หักลบกันเหลือ <?= signed_baht($sumHold) ?></span>
+        </p>
+    <?php endif; ?>
 </div>
 
 <!-- ปฏิทินรายการ -->

@@ -26,14 +26,6 @@ $timeline = $validFriend && $myMember > 0 ? friend_timeline($myMember, $fid) : [
 function tl_thai_day($ts) {
     return thai_short_date($ts) ?: 'ไม่ระบุวันที่';
 }
-/** ยอดพร้อมเครื่องหมาย (0 ไม่ใส่เครื่องหมาย) */
-function tl_signed($v) {
-    return abs($v) < 0.009 ? '0.00' : (($v > 0 ? '+' : '−') . baht(abs($v)));
-}
-/** class สีตามทิศทางยอด */
-function tl_tone($v) {
-    return abs($v) < 0.009 ? 'text-slate-400' : ($v > 0 ? 'text-emerald-600' : 'text-rose-500');
-}
 
 layout_head($friendName, 'friends.php');
 ?>
@@ -88,9 +80,7 @@ layout_head($friendName, 'friends.php');
             <a href="<?= $b['href'] ?>" class="rounded-xl p-3 border border-slate-100 hover:border-emerald-200 hover:bg-emerald-50/40 transition text-center">
                 <i data-lucide="<?= $b['icon'] ?>" class="w-4 h-4 mx-auto text-slate-400 mb-1"></i>
                 <p class="text-[11px] text-slate-400 mb-0.5"><?= $b['label'] ?></p>
-                <p class="font-bold text-sm <?= abs($v) < 0.009 ? 'text-slate-400' : ($v > 0 ? 'text-emerald-600' : 'text-rose-500') ?>">
-                    <?= abs($v) < 0.009 ? '0.00' : (($v > 0 ? '+' : '−') . baht(abs($v))) ?>
-                </p>
+                <p class="font-bold text-sm <?= amount_tone($v) ?>"><?= signed_baht($v) ?></p>
             </a>
         <?php endforeach; ?>
     </div>
@@ -185,7 +175,7 @@ layout_head($friendName, 'friends.php');
                     · <?= count($r['items']) ?> รายการ
                 </span>
                 <span class="ml-auto text-right shrink-0">
-                    <span class="text-xs font-bold <?= tl_tone($close) ?>"><?= tl_signed($close) ?> ฿</span>
+                    <span class="text-xs font-bold <?= amount_tone($close) ?>"><?= signed_baht($close) ?> ฿</span>
                     <span class="block text-[10px] text-slate-400"><?= $isNow ? 'คงค้างตอนนี้' : 'ปิดรอบ' ?></span>
                 </span>
             </<?= $head ?>>
@@ -194,7 +184,7 @@ layout_head($friendName, 'friends.php');
                 <div class="flex items-center gap-2 px-4 py-2 mb-2 rounded-xl bg-white border border-dashed border-slate-200 text-xs">
                     <i data-lucide="corner-down-right" class="w-3.5 h-3.5 text-slate-300 shrink-0"></i>
                     <span class="text-slate-500">ยกยอดมาจากรอบก่อน</span>
-                    <span class="ml-auto font-bold <?= tl_tone($r['open']) ?>"><?= tl_signed($r['open']) ?> ฿</span>
+                    <span class="ml-auto font-bold <?= amount_tone($r['open']) ?>"><?= signed_baht($r['open']) ?> ฿</span>
                 </div>
             <?php endif; ?>
 
@@ -212,7 +202,7 @@ layout_head($friendName, 'friends.php');
                         <div class="flex items-baseline gap-2 px-1 mb-1.5">
                             <span class="text-xs font-bold text-slate-500"><?= $day ? tl_thai_day($day . 'T12:00:00+07:00') : 'ไม่ระบุวันที่' ?></span>
                             <span class="text-[11px] text-slate-300">·</span>
-                            <span class="text-[11px] font-semibold <?= tl_tone($dayTotal) ?>">รวมวันนี้ <?= tl_signed($dayTotal) ?> ฿</span>
+                            <span class="text-[11px] font-semibold <?= amount_tone($dayTotal) ?>">รวมวันนี้ <?= signed_baht($dayTotal) ?> ฿</span>
                             <span class="text-[11px] text-slate-300 ml-auto"><?= count($items) ?> รายการ</span>
                         </div>
 
@@ -238,8 +228,8 @@ layout_head($friendName, 'friends.php');
                                         </p>
                                     </div>
                                     <div class="text-right shrink-0">
-                                        <p class="font-bold text-sm <?= tl_tone($imp) ?>"><?= $pos ? '+' : '−' ?><?= baht(abs($imp)) ?> ฿</p>
-                                        <p class="text-[10px] text-slate-300 mt-0.5">ยอดสะสม <?= tl_signed($t['running']) ?></p>
+                                        <p class="font-bold text-sm <?= amount_tone($imp) ?>"><?= $pos ? '+' : '−' ?><?= baht(abs($imp)) ?> ฿</p>
+                                        <p class="text-[10px] text-slate-300 mt-0.5">ยอดสะสม <?= signed_baht($t['running']) ?></p>
                                     </div>
                                 </div>
                             <?php endforeach; ?>
