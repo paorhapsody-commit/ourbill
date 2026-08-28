@@ -10,11 +10,44 @@ $status   = '';
 
 /** เงินที่เพื่อนจ่ายไว้ก่อน (held) แยกตามเพื่อน — ใช้หักผ่อนได้ */
 function held_by_owner($myMember) {
+    $me  = (int) $myMember;
     $map = [];
-    foreach (sb_rows(sb_get('holdings?holder_id=eq.' . $myMember . '&select=owner_id,amount')) as $h) {
+    foreach (ledger_part($me, 'holds') as $h) {
+        if ((int) $h['holder_id'] !== $me) continue;
         $map[(int) $h['owner_id']] = ($map[(int) $h['owner_id']] ?? 0) + (float) $h['amount'];
     }
     return $map;
+}
+
+/**
+ * แผนผ่อนของเราฝั่งใดฝั่งหนึ่ง + ยอดจ่ายรายแผน (ใช้ข้อมูลชุดเดียวกับหน้าอื่น ไม่ยิง query เพิ่ม)
+ * @param string $side 'payee' = เพื่อนผ่อนให้เรา | 'payer' = เราผ่อนให้เพื่อน
+ * @return array{0: array, 1: array}  [แผน (พ่วงชื่ออีกฝ่าย), ยอดจ่ายแยกตามแผน]
+ */
+function my_installment_plans($myMember, $side) {
+    $me   = (int) $myMember;
+    $mine = $side === 'payee' ? 'payee_id' : 'payer_id';
+    $them = $side === 'payee' ? 'payer_id' : 'payee_id';
+    $key  = $side === 'payee' ? 'payer'    : 'payee';
+
+    $plans = array_values(array_filter(ledger_part($me, 'plans'), fn($p) => (int) $p[$mine] === $me && (int) $p[$them] !== $me));
+    usort($plans, fn($a, $z) => strcmp((string) ($z['created_at'] ?? ''), (string) ($a['created_at'] ?? '')));
+
+    $names = member_names(array_map(fn($p) => (int) $p[$them], $plans));
+    foreach ($plans as &$p) { $p[$key] = ['name' => $names[(int) $p[$them]] ?? '?']; }
+    unset($p);
+
+    $ids  = array_flip(array_map(fn($p) => (int) $p['id'], $plans));
+    $paid = [];
+    foreach (ledger_part($me, 'payments') as $pm) {
+        $iid = (int) $pm['installment_id'];
+        if (isset($ids[$iid])) $paid[$iid][] = $pm;
+    }
+    foreach ($paid as &$list) {
+        usort($list, fn($a, $z) => strcmp((string) ($z['paid_at'] ?? ''), (string) ($a['paid_at'] ?? '')));
+    }
+    unset($list);
+    return [$plans, $paid];
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $myMember > 0) {
@@ -79,29 +112,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $myMember > 0) {
     }
 }
 
-// แผนผ่อนของเรา + การจ่าย
-$plans = $myMember ? sb_rows(sb_get('installments?payee_id=eq.' . $myMember . '&select=*,payer:payer_id(name)&order=created_at.desc')) : [];
-$paidById = [];
-if ($plans) {
-    $ids = implode(',', array_map(fn($p) => (int) $p['id'], $plans));
-    foreach (sb_rows(sb_get('installment_payments?installment_id=in.(' . $ids . ')&select=*&order=paid_at.desc')) as $pm) {
-        $paidById[(int) $pm['installment_id']][] = $pm;
-    }
-}
+// แผนผ่อนที่เพื่อนผ่อนให้เรา + การจ่าย
+list($plans, $paidById) = $myMember ? my_installment_plans($myMember, 'payee') : [[], []];
 $held = $myMember ? held_by_owner($myMember) : [];
 $friendMembers = array_filter(selectable_members($me), fn($m) => (int) $m['id'] !== $myMember);
 
 /* แผนที่ "เราเป็นคนผ่อนให้เพื่อน" (payer_id = เรา)
  * เดิมหน้านี้ query เฉพาะ payee_id=เรา แผนฝั่งที่เราติดเพื่อนจึงไม่โผล่ที่ไหนเลย
  * ทั้งที่มันมีผลกับยอดสุทธิ — แสดงแบบดูอย่างเดียว (บันทึกจ่าย/ลบ เป็นสิทธิ์ของฝั่งผู้รับเงิน) */
-$myDebts = $myMember ? sb_rows(sb_get('installments?payer_id=eq.' . $myMember . '&select=*,payee:payee_id(name)&order=created_at.desc')) : [];
-$debtPaidById = [];
-if ($myDebts) {
-    $ids = implode(',', array_map(fn($p) => (int) $p['id'], $myDebts));
-    foreach (sb_rows(sb_get('installment_payments?installment_id=in.(' . $ids . ')&select=*&order=paid_at.desc')) as $pm) {
-        $debtPaidById[(int) $pm['installment_id']][] = $pm;
-    }
-}
+list($myDebts, $debtPaidById) = $myMember ? my_installment_plans($myMember, 'payer') : [[], []];
 $myDebtRemain = 0; $myDebtDue = 0;
 foreach ($myDebts as $p) {
     $t  = (float) $p['monthly_amount'] * (int) $p['months'];
@@ -121,17 +140,14 @@ foreach ($plans as $p) {
     if (round($t - $pd, 2) > 0.009) $activePlans++;
 }
 
-layout_head('ผ่อนรายเดือน', 'holdings.php');
+layout_head('ผ่อนรายเดือน', 'settle.php');
 ?>
 
-<!-- แท็บย่อย -->
-<div class="flex gap-2 mb-5">
-    <a href="holdings.php" class="px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-slate-200 text-slate-500 hover:text-emerald-600">เงินที่ถือไว้</a>
-    <a href="installments.php" class="px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-br from-emerald-400 to-teal-500 text-white shadow-md shadow-emerald-200">ผ่อนรายเดือน</a>
-</div>
+<!-- แท็บย่อย (กลุ่มหน้าเงิน — ชุดเดียวกันทุกหน้า) -->
+<?php money_tabs('installments.php'); ?>
 
 <h1 class="text-xl font-bold text-slate-700 flex items-center gap-2 mb-1">
-    <i data-lucide="calendar-clock" class="w-6 h-6 text-emerald-500"></i> เงินผ่อนรายเดือน
+    <i data-lucide="calendar-clock" class="w-6 h-6 text-emerald-500"></i> ผ่อนรายเดือน
 </h1>
 <p class="text-sm text-slate-400 mb-5">เพื่อนที่ผ่อนจ่ายให้เรา — บันทึกยอดต่อเดือน จำนวนเดือน และหักจากเงินที่จ่ายไว้ก่อนได้</p>
 

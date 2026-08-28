@@ -5,22 +5,24 @@ require_once 'config.php';
 require_once '_layout.php';
 
 $myMember = (int) ($_SESSION['user']['member_id'] ?? 0);
+$snap     = ledger_snapshot($myMember);    // ดึงข้อมูลการเงินครั้งเดียว ใช้ร่วมทั้งหน้า
 $friends  = unified_balances($myMember);   // ยอดสุทธิรวมทุกฟังก์ชัน ต่อเพื่อน
 
-// รายจ่ายล่าสุดเฉพาะที่เกี่ยวข้องกับเรา (จ่ายก่อน หรือ อยู่ในรายการหาร)
-$splitExpenseIds = [];
-if ($myMember) {
-    $splitRows = sb_rows(sb_get('expense_splits?user_id=eq.' . $myMember . '&select=expense_id'));
-    $splitExpenseIds = array_unique(array_column($splitRows, 'expense_id'));
+/* รายจ่ายล่าสุดที่เกี่ยวข้องกับเรา (จ่ายเอง หรือถูกหารด้วย)
+ * ประกอบจาก snapshot ไม่ต้องยิง query เพิ่ม — บิลที่เราจ่ายเองอาจซ้ำกับที่เราถูกหาร จึงรวมด้วย id */
+$byId = [];
+foreach ($snap['paid'] as $e) {
+    $byId[(int) $e['id']] = $e + ['paid_by' => $myMember];
 }
-if ($myMember && !empty($splitExpenseIds)) {
-    $inList = implode(',', $splitExpenseIds);
-    $ledger = sb_rows(sb_get('expenses?select=*,users(name)&or=(paid_by.eq.' . $myMember . ',id.in.(' . $inList . '))&order=created_at.desc&limit=50'));
-} elseif ($myMember) {
-    $ledger = sb_rows(sb_get('expenses?select=*,users(name)&paid_by=eq.' . $myMember . '&order=created_at.desc&limit=50'));
-} else {
-    $ledger = [];
+foreach ($snap['shares'] as $s) {
+    $e = $s['expenses'] ?? null;
+    if (!$e || empty($e['id']) || isset($byId[(int) $e['id']])) continue;
+    $byId[(int) $e['id']] = $e;
 }
+uasort($byId, fn($a, $z) => strcmp((string) ($z['created_at'] ?? ''), (string) ($a['created_at'] ?? '')));
+$ledger     = array_slice(array_values($byId), 0, 50);
+$payerNames = member_names(array_map(fn($e) => (int) ($e['paid_by'] ?? 0), $ledger));
+
 $dueAlerts = installments_due_alerts($myMember);  // ผ่อนที่ถึงกำหนดงวดแล้ว
 
 // รายการสำหรับปฏิทิน จัดกลุ่มตามวัน
@@ -44,12 +46,11 @@ foreach ($friends as $f) {
  * (เดิมการ์ดหน้าแรกโชว์ยอดดิบฝั่งเดียว เลยไม่ตรงกับหน้าเงินเพื่อนที่หักลบสองทาง) */
 $heldByMe = 0; $heldByFriends = 0;
 $heldSince = null;          // รายการล่าสุดที่ทำให้ยอดดิบเปลี่ยน — ตอบว่า "ยอดนี้ตั้งแต่เมื่อไหร่"
-if ($myMember) {
-    foreach (sb_rows(sb_get('holdings?or=(holder_id.eq.' . $myMember . ',owner_id.eq.' . $myMember . ')&select=holder_id,amount,created_at&order=created_at.desc')) as $h) {
-        if ((int) $h['holder_id'] === $myMember) $heldByMe      += (float) $h['amount'];
-        else                                     $heldByFriends += (float) $h['amount'];
-        if ($heldSince === null) $heldSince = $h['created_at'];   // แถวแรก = ใหม่สุด
-    }
+foreach ($snap['holds'] as $h) {
+    if ((int) $h['holder_id'] === $myMember) $heldByMe      += (float) $h['amount'];
+    else                                     $heldByFriends += (float) $h['amount'];
+    $ts = (string) ($h['created_at'] ?? '');
+    if ($ts !== '' && ($heldSince === null || strcmp($ts, $heldSince) > 0)) $heldSince = $ts;
 }
 
 layout_head('หน้าหลัก', 'index.php');
@@ -145,6 +146,66 @@ layout_head('หน้าหลัก', 'index.php');
     <?php endif; ?>
 </div>
 
+<!-- ยอดสุทธิรวมกับเพื่อน -->
+<div class="flex items-center justify-between mb-1">
+    <h2 class="text-lg font-bold text-slate-700 flex items-center gap-2">
+        <i data-lucide="scale" class="w-5 h-5 text-emerald-500"></i> ยอดสุทธิกับเพื่อน
+    </h2>
+    <a href="settle.php" class="text-sm font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1">
+        เคลียร์หนี้ <i data-lucide="chevron-right" class="w-4 h-4"></i>
+    </a>
+</div>
+<p class="text-xs text-slate-400 mb-4">รวมทุกอย่าง: หารบิล + เคลียร์หนี้ + เงินที่ถือไว้ + ผ่อนรายเดือน</p>
+
+<div class="space-y-2 mb-8">
+    <?php if (empty($friends)): ?>
+        <div class="bg-white rounded-2xl p-8 text-center text-slate-400 border border-dashed border-slate-200">
+            ยังไม่มียอดกับเพื่อน — <a href="add-expense.php" class="text-emerald-600 font-semibold">เพิ่มรายจ่าย</a> หรือ <a href="friends.php" class="text-emerald-600 font-semibold">เพิ่มเพื่อน</a>
+        </div>
+    <?php endif; ?>
+
+    <?php foreach ($friends as $f):
+        $net  = (float) $f['net'];
+        $bill = $f['bill'] + $f['settle'];
+        $chips = [
+            ['label' => 'บิล',     'val' => $bill],
+            ['label' => 'ถือเงิน', 'val' => $f['holding']],
+            ['label' => 'ผ่อน',    'val' => $f['installment']],
+        ]; ?>
+        <a href="friend.php?id=<?= $f['id'] ?>" class="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center gap-3 hover:border-emerald-200 hover:shadow-md transition">
+            <?= avatar($f['id'], $f['name'], 'w-11 h-11 text-base') ?>
+            <div class="min-w-0 flex-1">
+                <p class="font-bold text-slate-800 truncate"><?= htmlspecialchars($f['name']) ?></p>
+                <div class="flex flex-wrap gap-1 mt-1">
+                    <?php foreach ($chips as $c): if (abs($c['val']) < 0.009) continue; ?>
+                        <span class="text-[11px] px-1.5 py-0.5 rounded <?= $c['val'] >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-500' ?>">
+                            <?= $c['label'] ?> <?= $c['val'] >= 0 ? '+' : '−' ?><?= baht(abs($c['val'])) ?>
+                        </span>
+                    <?php endforeach; ?>
+                </div>
+                <?php if (($f['inst_paid'] ?? 0) > 0.009): ?>
+                    <p class="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
+                        <i data-lucide="check" class="w-3 h-3 text-emerald-500"></i> หักผ่อนที่เพื่อนจ่ายแล้ว <?= baht($f['inst_paid']) ?> ฿
+                    </p>
+                <?php endif; ?>
+            </div>
+            <div class="text-right shrink-0">
+                <?php if ($net > 0.009): ?>
+                    <p class="text-xl font-black text-emerald-600">+<?= baht($net) ?> ฿</p>
+                    <p class="text-[11px] text-emerald-600 font-medium">เพื่อนติดเรา</p>
+                <?php elseif ($net < -0.009): ?>
+                    <p class="text-xl font-black text-rose-500"><?= baht($net) ?> ฿</p>
+                    <p class="text-[11px] text-rose-500 font-medium">เราติดเพื่อน</p>
+                <?php else: ?>
+                    <p class="text-xl font-black text-slate-400">0.00 ฿</p>
+                    <p class="text-[11px] text-slate-400 font-medium">เคลียร์แล้ว</p>
+                <?php endif; ?>
+            </div>
+            <i data-lucide="chevron-right" class="w-4 h-4 text-slate-300 shrink-0"></i>
+        </a>
+    <?php endforeach; ?>
+</div>
+
 <!-- ปฏิทินรายการ -->
 <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 md:p-5 mb-7">
     <div class="flex items-center justify-between mb-3">
@@ -230,66 +291,6 @@ layout_head('หน้าหลัก', 'index.php');
 })();
 </script>
 
-<!-- ยอดสุทธิรวมกับเพื่อน -->
-<div class="flex items-center justify-between mb-1">
-    <h2 class="text-lg font-bold text-slate-700 flex items-center gap-2">
-        <i data-lucide="scale" class="w-5 h-5 text-emerald-500"></i> ยอดสุทธิกับเพื่อน
-    </h2>
-    <a href="settle.php" class="text-sm font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1">
-        เคลียร์หนี้ <i data-lucide="chevron-right" class="w-4 h-4"></i>
-    </a>
-</div>
-<p class="text-xs text-slate-400 mb-4">รวมทุกอย่าง: หารบิล + เคลียร์หนี้ + เงินที่ถือไว้ + ผ่อนรายเดือน</p>
-
-<div class="space-y-2 mb-8">
-    <?php if (empty($friends)): ?>
-        <div class="bg-white rounded-2xl p-8 text-center text-slate-400 border border-dashed border-slate-200">
-            ยังไม่มียอดกับเพื่อน — <a href="add-expense.php" class="text-emerald-600 font-semibold">เพิ่มรายจ่าย</a> หรือ <a href="friends.php" class="text-emerald-600 font-semibold">เพิ่มเพื่อน</a>
-        </div>
-    <?php endif; ?>
-
-    <?php foreach ($friends as $f):
-        $net  = (float) $f['net'];
-        $bill = $f['bill'] + $f['settle'];
-        $chips = [
-            ['label' => 'บิล',     'val' => $bill],
-            ['label' => 'ถือเงิน', 'val' => $f['holding']],
-            ['label' => 'ผ่อน',    'val' => $f['installment']],
-        ]; ?>
-        <a href="friend.php?id=<?= $f['id'] ?>" class="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center gap-3 hover:border-emerald-200 hover:shadow-md transition">
-            <?= avatar($f['id'], $f['name'], 'w-11 h-11 text-base') ?>
-            <div class="min-w-0 flex-1">
-                <p class="font-bold text-slate-800 truncate"><?= htmlspecialchars($f['name']) ?></p>
-                <div class="flex flex-wrap gap-1 mt-1">
-                    <?php foreach ($chips as $c): if (abs($c['val']) < 0.009) continue; ?>
-                        <span class="text-[11px] px-1.5 py-0.5 rounded <?= $c['val'] >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-500' ?>">
-                            <?= $c['label'] ?> <?= $c['val'] >= 0 ? '+' : '−' ?><?= baht(abs($c['val'])) ?>
-                        </span>
-                    <?php endforeach; ?>
-                </div>
-                <?php if (($f['inst_paid'] ?? 0) > 0.009): ?>
-                    <p class="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
-                        <i data-lucide="check" class="w-3 h-3 text-emerald-500"></i> หักผ่อนที่เพื่อนจ่ายแล้ว <?= baht($f['inst_paid']) ?> ฿
-                    </p>
-                <?php endif; ?>
-            </div>
-            <div class="text-right shrink-0">
-                <?php if ($net > 0.009): ?>
-                    <p class="text-xl font-black text-emerald-600">+<?= baht($net) ?> ฿</p>
-                    <p class="text-[11px] text-emerald-600 font-medium">เพื่อนติดเรา</p>
-                <?php elseif ($net < -0.009): ?>
-                    <p class="text-xl font-black text-rose-500"><?= baht($net) ?> ฿</p>
-                    <p class="text-[11px] text-rose-500 font-medium">เราติดเพื่อน</p>
-                <?php else: ?>
-                    <p class="text-xl font-black text-slate-400">0.00 ฿</p>
-                    <p class="text-[11px] text-slate-400 font-medium">เคลียร์แล้ว</p>
-                <?php endif; ?>
-            </div>
-            <i data-lucide="chevron-right" class="w-4 h-4 text-slate-300 shrink-0"></i>
-        </a>
-    <?php endforeach; ?>
-</div>
-
 <!-- Recent expenses -->
 <div class="flex items-center justify-between mb-4">
     <h2 class="text-lg font-bold text-slate-700 flex items-center gap-2">
@@ -313,7 +314,7 @@ layout_head('หน้าหลัก', 'index.php');
             <div class="min-w-0">
                 <p class="font-semibold text-slate-800 truncate"><?= htmlspecialchars($item['title']) ?></p>
                 <p class="text-xs text-slate-400">
-                    จ่ายก่อนโดย <?= htmlspecialchars($item['users']['name'] ?? 'ไม่ระบุ') ?> ·
+                    จ่ายก่อนโดย <?= htmlspecialchars($payerNames[(int) ($item['paid_by'] ?? 0)] ?? 'ไม่ระบุ') ?> ·
                     <?= date('d/m/y H:i', ts_thai($item['spent_at'] ?? $item['created_at'])) ?>
                 </p>
             </div>

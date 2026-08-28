@@ -66,12 +66,8 @@ foreach ($pending as $f) {
 layout_head('เคลียร์หนี้', 'settle.php');
 ?>
 
-<!-- แท็บย่อย -->
-<div class="flex gap-2 mb-5 flex-wrap">
-    <a href="settle.php" class="px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-br from-emerald-400 to-teal-500 text-white shadow-md shadow-emerald-200">ยอดสุทธิรวม</a>
-    <a href="holdings.php" class="px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-slate-200 text-slate-500 hover:text-emerald-600">เงินที่ถือไว้</a>
-    <a href="installments.php" class="px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-slate-200 text-slate-500 hover:text-emerald-600">ผ่อนรายเดือน</a>
-</div>
+<!-- แท็บย่อย (กลุ่มหน้าเงิน — ชุดเดียวกันทุกหน้า) -->
+<?php money_tabs('settle.php'); ?>
 
 <h1 class="text-xl font-bold text-slate-700 flex items-center gap-2 mb-1">
     <i data-lucide="arrow-right-left" class="w-6 h-6 text-emerald-500"></i> เคลียร์หนี้

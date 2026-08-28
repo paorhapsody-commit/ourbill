@@ -28,11 +28,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $myMember > 0) {
     exit;
 }
 
-// ดึงรายการที่เกี่ยวกับเรา (เราถือ หรือเป็นเงินเรา)
-$rows = $myMember ? sb_rows(sb_get(
-    'holdings?select=*,holder:holder_id(name),owner:owner_id(name)'
-    . '&or=(holder_id.eq.' . $myMember . ',owner_id.eq.' . $myMember . ')&order=created_at.desc'
-)) : [];
+// ดึงรายการที่เกี่ยวกับเรา (เราถือ หรือเป็นเงินเรา) — ใช้ข้อมูลชุดเดียวกับ unified_balances
+$rows = ledger_part($myMember, 'holds');
+usort($rows, fn($a, $z) => strcmp((string) ($z['created_at'] ?? ''), (string) ($a['created_at'] ?? '')));
 
 /* ยอดคงเหลือของ "ก้อนนั้น" หลังจากแต่ละรายการ + วันที่ยอดเปลี่ยนครั้งล่าสุด
  * ตอบคำถาม "ยอดนี้เป็นเท่านี้มาตั้งแต่เมื่อไหร่" ซึ่งเดิมดูจากหน้าเว็บไม่ได้เลย
@@ -62,17 +60,14 @@ $totalMine = array_sum(array_column($frHold, 'net'));
 // เพื่อนสำหรับ dropdown (ไม่รวมตัวเอง)
 $friendMembers = array_filter(selectable_members($me), fn($m) => (int) $m['id'] !== $myMember);
 
-layout_head('เงินเพื่อน', 'holdings.php');
+layout_head('เงินที่ถือไว้', 'settle.php');
 ?>
 
-<!-- แท็บย่อย -->
-<div class="flex gap-2 mb-5">
-    <a href="holdings.php" class="px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-br from-emerald-400 to-teal-500 text-white shadow-md shadow-emerald-200">เงินที่ถือไว้</a>
-    <a href="installments.php" class="px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-slate-200 text-slate-500 hover:text-emerald-600">ผ่อนรายเดือน</a>
-</div>
+<!-- แท็บย่อย (กลุ่มหน้าเงิน — ชุดเดียวกันทุกหน้า) -->
+<?php money_tabs('holdings.php'); ?>
 
 <h1 class="text-xl font-bold text-slate-700 flex items-center gap-2 mb-1">
-    <i data-lucide="piggy-bank" class="w-6 h-6 text-emerald-500"></i> เงินเพื่อนที่ถือไว้
+    <i data-lucide="piggy-bank" class="w-6 h-6 text-emerald-500"></i> เงินที่ถือไว้
 </h1>
 <p class="text-sm text-slate-400 mb-5">บันทึกว่ามีเงินของเพื่อนคนไหนอยู่กับเราเท่าไหร่ จะได้ไม่ลืมคืน · การ์ดแสดง<b>ยอดสุทธิ</b> หักลบกับบิล/รายจ่ายที่เพื่อนออกให้แล้ว (ไม่รวมผ่อนรายเดือน)</p>
 

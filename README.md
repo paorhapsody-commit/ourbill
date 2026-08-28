@@ -20,7 +20,11 @@
 | `settle.php` | เคลียร์หนี้ — แนะนำวิธีโอน + บันทึกว่าโอนแล้ว + ประวัติ |
 | `friends.php` | เพื่อนของฉัน — ค้นหา/ส่งคำขอ/ตอบรับ (friend request สองทาง) |
 | `friend_search.php` | endpoint ค้นหาผู้ใช้ (autocomplete) คืน JSON |
-| `auth.php` | session + Google OAuth + แอดมิน (Supabase Auth) helpers |
+| `auth.php` | session + CSRF + Google OAuth + แอดมิน + เพื่อน/คำเชิญ |
+| `ledger.php` | **ตรรกะเรื่องเงินทั้งหมด** — ยอดคงเหลือ, ไทม์ไลน์, การแบ่งรอบ, เคลียร์หนี้ (โหลดผ่าน `auth.php`) |
+| `friend.php` | หน้าเพื่อนรายคน — ยอดสุทธิ + ประวัติแบ่งเป็นรอบ |
+| `holdings.php` / `installments.php` | เงินที่ถือไว้ / ผ่อนรายเดือน (แท็บเดียวกับ `settle.php`) |
+| `profile.php` | แก้ชื่อ/รูปโปรไฟล์ + เปลี่ยนธีมสี |
 | `auth_config.php` | ตั้งค่า Google Client ID/Secret + allowlist อีเมล (fallback) |
 | `login.php` / `callback.php` / `logout.php` | เข้าสู่ระบบผู้ใช้ / รับ callback Google / ออกจากระบบ |
 | `admin_login.php` / `admin.php` | เข้าสู่ระบบแอดมิน + แผงตั้งค่าระบบ |
@@ -106,6 +110,18 @@
 - เก็บไฟล์บน **Supabase Storage** bucket `receipts` (public) แล้วเก็บ URL ในคอลัมน์ `expenses.receipt_url`
 - แสดงรูปในหน้ารายละเอียดบิล + thumbnail ในรายการล่าสุดหน้าหลัก · แก้ไขเปลี่ยน/ลบรูปได้
 - ⚠️ ต้องรัน `schema.sql` ส่วน Storage เพื่อสร้าง bucket `receipts` + policy (anon อัปโหลด/อ่านได้)
+
+## การดึงข้อมูล (กติกาที่ต้องรักษาไว้)
+ทุกอย่างคุยกับ Supabase ผ่าน REST ทีละ request — **แต่ละ request ≈ 250 ms** จำนวน query จึงเป็นตัวกำหนดความเร็วหน้าเว็บโดยตรง
+
+- อย่ายิง query ตารางเดิมซ้ำในหน้าเดียว ให้เรียก **`ledger_part($myMember, $key)`** ใน `ledger.php` แทน
+  (`paid` / `shares` / `settles` / `holds` / `plans` / `payments`) ดึงครั้งแรกที่ใช้แล้วจำไว้ทั้ง request
+- ต้องใช้ครบทุกก้อนค่อยเรียก `ledger_snapshot()` (หน้าแรก / ไทม์ไลน์เพื่อน)
+- **ห้ามยิง query ในลูป** — `friend_timeline()` เคยถูกวนต่อเพื่อน 1 คนใน `settle.php` ทำให้ยิงเพิ่มรอบละ 6
+  ตอนนี้กรองจากข้อมูลที่ดึงไว้แล้วในหน่วยความจำ เพิ่มเพื่อนกี่คนก็ไม่ยิงเพิ่ม
+- select ของ `ledger_part()` เป็น superset ของทุกฟังก์ชัน — เพิ่มคอลัมน์ที่นั่นได้ ไม่ต้องเพิ่ม query
+
+> วัดผลก่อน/หลัง: หน้าแรกจาก ~21 request (5.5 วิ) เหลือ ~8 (2.4 วิ) · ชุดคำนวณทั้งหมด 20.9 วิ → 5.1 วิ
 
 ## ความปลอดภัย (กติกาที่ต้องรักษาไว้เวลาแก้โค้ด)
 ทั้งแอปใช้ **anon key ฝั่ง server อย่างเดียว** และ RLS เป็น `allow_all` → **PHP คือด่านเดียวที่กันข้อมูลข้ามคน** เพิ่มโค้ดใหม่ต้องทำ 3 อย่างนี้เสมอ

@@ -7,9 +7,33 @@ function nav_items() {
     return [
         ['href' => 'index.php',       'icon' => 'layout-dashboard', 'label' => 'หน้าหลัก'],
         ['href' => 'add-expense.php', 'icon' => 'plus-circle',      'label' => 'เพิ่มรายจ่าย'],
+        // settle/holdings/installments เป็นกลุ่มเดียวกัน (สลับกันด้วย money_tabs) จึงมีช่องเดียว
         ['href' => 'settle.php',      'icon' => 'arrow-right-left',  'label' => 'เคลียร์หนี้'],
-        ['href' => 'holdings.php',    'icon' => 'piggy-bank',        'label' => 'เงินเพื่อน'],
+        // เดิม "เพื่อน" ซ่อนอยู่ใน dropdown โปรไฟล์อย่างเดียว
+        ['href' => 'friends.php',     'icon' => 'users',             'label' => 'เพื่อน'],
     ];
+}
+
+/**
+ * แท็บของกลุ่มหน้า "เงิน" — 3 หน้านี้เป็นมุมมองคนละแบบของยอดเดียวกัน จึงต้องข้ามหากันได้ครบ
+ * เดิมแต่ละหน้าเขียนแท็บเอง เลยหลุดไม่เท่ากัน (จากหน้าเงินที่ถือไว้กลับไปเคลียร์หนี้ไม่ได้)
+ * ชื่อแท็บต้องตรงกับชื่อหน้าใน nav_items() เสมอ
+ */
+function money_tabs($active) {
+    $tabs = [
+        'settle.php'       => 'เคลียร์หนี้',
+        'holdings.php'     => 'เงินที่ถือไว้',
+        'installments.php' => 'ผ่อนรายเดือน',
+    ];
+    echo '<div class="flex gap-2 mb-5 flex-wrap">';
+    foreach ($tabs as $href => $label) {
+        $on = ($href === $active);
+        echo '<a href="' . $href . '" class="px-4 py-2 rounded-xl text-sm font-semibold '
+            . ($on ? 'bg-gradient-to-br from-emerald-400 to-teal-500 text-white shadow-md shadow-emerald-200'
+                   : 'bg-white border border-slate-200 text-slate-500 hover:text-emerald-600')
+            . '">' . $label . '</a>';
+    }
+    echo '</div>';
 }
 
 function layout_head($title, $active = '') {
