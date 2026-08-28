@@ -172,27 +172,54 @@ $shownMine = array_filter($frHold, fn($v) => abs($v['net']) > 0.009);
 
 <!-- ประวัติ -->
 <h2 class="text-sm font-bold text-slate-500 mb-2 px-1 flex items-center gap-1.5"><i data-lucide="history" class="w-4 h-4"></i> ประวัติล่าสุด</h2>
+<p class="text-[11px] text-slate-400 mb-2 px-1">
+    ตัวเลขคือ<b>ผลต่อยอดสุทธิ</b>ระหว่างเรากับเพื่อน ไม่ใช่ทิศทางเงินสด —
+    <span class="text-emerald-600 font-bold">+</span> เพื่อนติดเราเพิ่ม/หนี้เราลดลง ·
+    <span class="text-rose-500 font-bold">−</span> เราติดเพื่อนเพิ่ม/หนี้เพื่อนลดลง
+</p>
 <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden js-more-list" data-show="10">
     <?php if (empty($rows)): ?>
         <p class="p-8 text-center text-slate-400 text-sm">ยังไม่มีประวัติ</p>
     <?php else: foreach ($rows as $h):
-        $amt = (float) $h['amount'];
-        $iAmHolder = (int) $h['holder_id'] === $myMember; ?>
+        $amt       = (float) $h['amount'];
+        $iAmHolder = (int) $h['holder_id'] === $myMember;
+        $friend    = $iAmHolder ? ($h['owner']['name'] ?? '?') : ($h['holder']['name'] ?? '?');
+
+        /* ผลต่อยอดสุทธิ (ทิศเดียวกับ friend.php / หน้าแรก):
+         * เราถือเงินเพื่อน = เราติดเพื่อน (−) · เพื่อนถือเงินเรา = เพื่อนติดเรา (+)
+         * เดิมใช้เครื่องหมายดิบของ amount ซึ่งเป็นมุมของ "คนถือ" ทำให้แถวที่ผลตรงข้ามกัน
+         * กลับเป็นสีเดียวกัน (รับเงินเพื่อนมาถือ กับ เพื่อนถือเงินเรา เขียวทั้งคู่) */
+        $impact = $iAmHolder ? -$amt : $amt;
+
+        [$title, $effect] = $iAmHolder
+            ? ($amt >= 0 ? ['รับเงินของ ' . $friend . ' มาถือ', 'เราติดเพื่อนเพิ่ม']
+                         : ['คืนเงินให้ ' . $friend,           'หนี้ที่เราติดเพื่อนลดลง'])
+            : ($amt >= 0 ? [$friend . ' ถือเงินเราไว้',        'เพื่อนติดเราเพิ่ม']
+                         : [$friend . ' คืนเงินเรา',           'หนี้ที่เพื่อนติดเราลดลง']);
+
+        $bucket        = $iAmHolder ? 'เงินเพื่อนอยู่กับเรา' : 'เงินเราอยู่กับเพื่อน';
+        $fromReconcile = !empty($h['note']) && mb_strpos($h['note'], 'เคลียร์') !== false;
+    ?>
         <div class="flex items-center gap-3 p-4 border-b border-slate-50 last:border-0">
-            <span class="grid place-items-center w-9 h-9 rounded-xl shrink-0 <?= $amt >= 0 ? 'bg-emerald-50 text-emerald-500' : 'bg-rose-50 text-rose-500' ?>">
-                <i data-lucide="<?= $amt >= 0 ? 'arrow-down-left' : 'arrow-up-right' ?>" class="w-4 h-4"></i>
+            <span class="grid place-items-center w-9 h-9 rounded-xl shrink-0 <?= $impact >= 0 ? 'bg-emerald-50 text-emerald-500' : 'bg-rose-50 text-rose-500' ?>">
+                <i data-lucide="<?= $iAmHolder ? 'piggy-bank' : 'hand-coins' ?>" class="w-4 h-4"></i>
             </span>
             <div class="text-sm min-w-0 flex-1">
                 <p class="text-slate-700 truncate">
-                    <?php if ($iAmHolder): ?>
-                        <?= $amt >= 0 ? 'รับเงินของ' : 'คืนเงินให้' ?> <b><?= htmlspecialchars($h['owner']['name'] ?? '?') ?></b>
-                    <?php else: ?>
-                        <b><?= htmlspecialchars($h['holder']['name'] ?? '?') ?></b> <?= $amt >= 0 ? 'ถือเงินเรา' : 'คืนเงินเรา' ?>
+                    <?= htmlspecialchars($title) ?>
+                    <?php if ($fromReconcile): ?>
+                        <span class="ml-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 align-middle">จากการเคลียร์ยอด</span>
                     <?php endif; ?>
                 </p>
-                <p class="text-xs text-slate-400"><?= date('d/m/y H:i', strtotime($h['created_at'])) ?><?= $h['note'] ? ' · ' . htmlspecialchars($h['note']) : '' ?></p>
+                <p class="text-xs text-slate-400 truncate">
+                    <?= $effect ?> · <?= date('d/m/y H:i', strtotime($h['created_at'])) ?>
+                    <?php if (!empty($h['note']) && !$fromReconcile): ?> · <?= htmlspecialchars($h['note']) ?><?php endif; ?>
+                </p>
             </div>
-            <span class="font-bold shrink-0 <?= $amt >= 0 ? 'text-emerald-600' : 'text-rose-500' ?>"><?= baht(abs($amt)) ?> ฿</span>
+            <div class="text-right shrink-0">
+                <p class="font-bold <?= amount_tone($impact) ?>"><?= signed_baht($impact) ?> ฿</p>
+                <p class="text-[10px] text-slate-300 mt-0.5"><?= $bucket ?></p>
+            </div>
         </div>
     <?php endforeach; endif; ?>
 </div>
