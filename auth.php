@@ -627,28 +627,60 @@ function tl_is_carry($t) {
 /**
  * ตัดไทม์ไลน์เป็น "รอบ" — แต่ละรอบจบที่การกดเคลียร์ยอด 1 ครั้ง
  * ทำให้ยอดสะสมเริ่มนับใหม่ทุกรอบ แทนที่จะบวกยาวตั้งแต่ธุรกรรมแรกจนงง
- * @return array เรียงรอบเก่า -> ใหม่ · แต่ละรอบ ['open'=>ยอดยกมา, 'items'=>[เก่า->ใหม่], 'closed_at'=>ts|null]
- *               รอบสุดท้ายคือรอบปัจจุบัน (closed_at = null)
+ *
+ * @return array เรียงรอบเก่า -> ใหม่ · รอบสุดท้ายคือรอบปัจจุบัน (closed_at = null)
+ *   open        ยอดยกมาจากรอบก่อน
+ *   items       รายการในรอบ เรียงเก่า -> ใหม่ (รวมแถวปิดยอด แต่ไม่รวมแถวส่วนต่าง)
+ *   closed_at   เวลาที่ปิดรอบ (null = รอบปัจจุบัน)
+ *   net_before  ยอดคงค้างก่อนกดเคลียร์
+ *   pay         เงินที่จ่ายจริงตอนปิดรอบ
+ *   payer       'friend' = เพื่อนจ่ายคืนเรา | 'me' = เราจ่ายคืนเพื่อน | null = ไม่มียอดต้องจ่าย
+ *   carry       ส่วนต่างที่ยกไปรอบถัดไป
+ *
+ * ยอดที่จ่ายไม่ได้ถูกเก็บเป็นคอลัมน์ในฐานข้อมูล แต่ถอดกลับได้จากนิยามของ
+ * reconcile_with_friend(): residual = net − sign(net) × pay  =>  pay = |net − residual|
  */
 function tl_split_rounds($timeline) {
     $asc    = array_reverse($timeline);          // เก่า -> ใหม่
     $rounds = [];
-    $cur    = ['open' => 0.0, 'items' => [], 'closed_at' => null];
+    $blank  = ['open' => 0.0, 'items' => [], 'closed_at' => null,
+               'net_before' => 0.0, 'pay' => 0.0, 'payer' => null, 'carry' => 0.0];
+    $cur    = $blank;
+    $run    = 0.0;                                // ยอดคงค้างสะสมภายในรอบ
     $i = 0; $n = count($asc);
 
     while ($i < $n) {
-        if (!tl_is_reconcile($asc[$i])) { $cur['items'][] = $asc[$i]; $i++; continue; }
+        if (!tl_is_reconcile($asc[$i])) {
+            $run += round((float) $asc[$i]['impact'], 2);
+            $cur['items'][] = $asc[$i];
+            $i++;
+            continue;
+        }
 
         // เจอกลุ่มการเคลียร์ (หลายแถวเกิดพร้อมกัน) -> กินทั้งกลุ่มแล้วปิดรอบ
-        $carry = 0.0;
+        $netBefore = round($run, 2);
+        $carry     = 0.0;
         while ($i < $n && tl_is_reconcile($asc[$i])) {
-            if (tl_is_carry($asc[$i])) $carry += (float) $asc[$i]['impact'];  // ยกไปรอบหน้า
-            else                       $cur['items'][] = $asc[$i];            // เป็นการปิดยอดของรอบนี้
+            if (tl_is_carry($asc[$i])) {
+                $carry += (float) $asc[$i]['impact'];        // ยกไปรอบหน้า
+            } else {
+                $run += round((float) $asc[$i]['impact'], 2); // แถวปิดยอดของรอบนี้
+                $cur['items'][] = $asc[$i];
+            }
             $i++;
         }
-        $cur['closed_at'] = $asc[$i - 1]['ts'] ?? null;
+        $carry = round($carry, 2);
+
+        $cur['closed_at']  = $asc[$i - 1]['ts'] ?? null;
+        $cur['net_before'] = $netBefore;
+        $cur['carry']      = $carry;
+        $cur['pay']        = round(abs($netBefore - $carry), 2);
+        $cur['payer']      = abs($netBefore) < 0.009 ? null : ($netBefore > 0 ? 'friend' : 'me');
+
         $rounds[] = $cur;
-        $cur = ['open' => round($carry, 2), 'items' => [], 'closed_at' => null];
+        $cur = $blank;
+        $cur['open'] = $carry;
+        $run = $carry;
     }
     $rounds[] = $cur;                             // รอบปัจจุบัน (ยังไม่ปิด)
     return $rounds;

@@ -174,11 +174,54 @@ layout_head($friendName, 'friends.php');
                     <?php else: ?>ยังไม่มีรายการใหม่<?php endif; ?>
                     · <?= count($r['items']) ?> รายการ
                 </span>
+                <?php if (!$isNow && $r['payer']): ?>
+                    <!-- เห็นยอดที่จ่ายปิดรอบได้ตั้งแต่ยังไม่กางรอบ -->
+                    <span class="text-[11px] font-semibold px-1.5 py-0.5 rounded <?= $r['payer'] === 'friend' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-500' ?>">
+                        <?= $r['payer'] === 'friend' ? 'เพื่อนจ่าย' : 'เราจ่าย' ?> <?= baht($r['pay']) ?> ฿
+                    </span>
+                <?php endif; ?>
                 <span class="ml-auto text-right shrink-0">
                     <span class="text-xs font-bold <?= amount_tone($close) ?>"><?= signed_baht($close) ?> ฿</span>
                     <span class="block text-[10px] text-slate-400"><?= $isNow ? 'คงค้างตอนนี้' : 'ปิดรอบ' ?></span>
                 </span>
             </<?= $head ?>>
+
+            <?php if (!$isNow): ?>
+                <!-- สรุปการปิดรอบ: ยอดก่อนเคลียร์ → จ่ายจริงเท่าไหร่ → เหลือยกไปรอบหน้า
+                     (ยอดที่จ่ายไม่ได้เก็บเป็นคอลัมน์ใน DB — ถอดกลับจาก ยอดก่อนเคลียร์ กับ ส่วนต่าง) -->
+                <div class="rounded-xl border border-emerald-100 bg-emerald-50/50 px-4 py-3 mb-2">
+                    <p class="text-[11px] font-bold text-emerald-700 flex items-center gap-1.5 mb-2">
+                        <i data-lucide="check-check" class="w-3.5 h-3.5"></i>
+                        ปิดรอบ <?= $r['closed_at'] ? tl_thai_day($r['closed_at']) . ' ' . date('H:i', ts_thai($r['closed_at'])) : '' ?>
+                    </p>
+                    <div class="space-y-1 text-xs">
+                        <div class="flex items-baseline gap-2">
+                            <span class="text-slate-500">ยอดคงค้างก่อนเคลียร์</span>
+                            <span class="ml-auto font-semibold <?= amount_tone($r['net_before']) ?>"><?= signed_baht($r['net_before']) ?> ฿</span>
+                        </div>
+                        <div class="flex items-baseline gap-2">
+                            <span class="text-slate-500">
+                                <?php if ($r['payer'] === 'friend'): ?>
+                                    <b class="text-slate-700"><?= htmlspecialchars($friendName) ?></b> จ่ายคืนเรา
+                                <?php elseif ($r['payer'] === 'me'): ?>
+                                    <b class="text-slate-700">เรา</b> จ่ายคืน <?= htmlspecialchars($friendName) ?>
+                                <?php else: ?>
+                                    ไม่มียอดต้องจ่าย
+                                <?php endif; ?>
+                            </span>
+                            <span class="ml-auto font-black text-base text-slate-800"><?= baht($r['pay']) ?> ฿</span>
+                        </div>
+                        <div class="flex items-baseline gap-2 pt-1 border-t border-emerald-100">
+                            <span class="text-slate-500">
+                                <?php if (abs((float) $r['carry']) < 0.009): ?>เคลียร์หมดพอดี
+                                <?php elseif ($r['carry'] > 0): ?>จ่ายขาด — ยกไปรอบถัดไป (เพื่อนยังติดเรา)
+                                <?php else: ?>จ่ายเกิน — ยกไปรอบถัดไป (เราติดเพื่อน)<?php endif; ?>
+                            </span>
+                            <span class="ml-auto font-semibold <?= amount_tone($r['carry']) ?>"><?= signed_baht($r['carry']) ?> ฿</span>
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
 
             <?php if (abs((float) $r['open']) > 0.009): ?>
                 <div class="flex items-center gap-2 px-4 py-2 mb-2 rounded-xl bg-white border border-dashed border-slate-200 text-xs">
