@@ -358,3 +358,14 @@ function thai_date($ts) {
     $u = ts_thai($ts);
     return $u ? date('Y-m-d', $u) : '';
 }
+
+/**
+ * วันที่แบบไทยสั้น เช่น "30 ก.ค. 69"
+ * รับได้ทั้ง timestamp ของ Supabase และสตริง 'Y-m-d' (ถือเป็นเที่ยงวันเวลาไทย กันเหลื่อมวัน)
+ */
+function thai_short_date($ts) {
+    static $m = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    if (!$ts) return '';
+    $u = ts_thai(strlen((string) $ts) <= 10 ? $ts . 'T12:00:00+07:00' : $ts);
+    return $u ? (int) date('j', $u) . ' ' . $m[(int) date('n', $u)] . ' ' . (date('Y', $u) + 543) % 100 : '';
+}

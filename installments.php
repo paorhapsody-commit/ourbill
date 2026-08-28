@@ -91,6 +91,25 @@ if ($plans) {
 $held = $myMember ? held_by_owner($myMember) : [];
 $friendMembers = array_filter(selectable_members($me), fn($m) => (int) $m['id'] !== $myMember);
 
+/* แผนที่ "เราเป็นคนผ่อนให้เพื่อน" (payer_id = เรา)
+ * เดิมหน้านี้ query เฉพาะ payee_id=เรา แผนฝั่งที่เราติดเพื่อนจึงไม่โผล่ที่ไหนเลย
+ * ทั้งที่มันมีผลกับยอดสุทธิ — แสดงแบบดูอย่างเดียว (บันทึกจ่าย/ลบ เป็นสิทธิ์ของฝั่งผู้รับเงิน) */
+$myDebts = $myMember ? sb_rows(sb_get('installments?payer_id=eq.' . $myMember . '&select=*,payee:payee_id(name)&order=created_at.desc')) : [];
+$debtPaidById = [];
+if ($myDebts) {
+    $ids = implode(',', array_map(fn($p) => (int) $p['id'], $myDebts));
+    foreach (sb_rows(sb_get('installment_payments?installment_id=in.(' . $ids . ')&select=*&order=paid_at.desc')) as $pm) {
+        $debtPaidById[(int) $pm['installment_id']][] = $pm;
+    }
+}
+$myDebtRemain = 0; $myDebtDue = 0;
+foreach ($myDebts as $p) {
+    $t  = (float) $p['monthly_amount'] * (int) $p['months'];
+    $pd = 0; foreach (($debtPaidById[(int) $p['id']] ?? []) as $pm) $pd += (float) $pm['amount'];
+    $myDebtRemain += max(0, round($t - $pd, 2));
+    $myDebtDue    += installment_due_outstanding($p, $pd);
+}
+
 // สรุปยอดผ่อน (เพื่อนผ่อนจ่ายให้เรา)
 $sumRemain = 0; $sumDue = 0; $sumPaid = 0; $activePlans = 0;
 foreach ($plans as $p) {
@@ -273,6 +292,89 @@ layout_head('ผ่อนรายเดือน', 'holdings.php');
         <?php endif; ?>
     </div>
 <?php endforeach; endif; ?>
+
+<!-- ===== ที่เราผ่อนให้เพื่อน (ดูอย่างเดียว) ===== -->
+<?php if (!empty($myDebts)): ?>
+<h2 class="text-lg font-bold text-slate-700 flex items-center gap-2 mt-8 mb-1">
+    <i data-lucide="arrow-up-right" class="w-5 h-5 text-rose-400"></i> ที่เราผ่อนให้เพื่อน
+</h2>
+<p class="text-xs text-slate-400 mb-4">
+    แผนที่เพื่อนเป็นคนตั้งให้เรา — ดูความคืบหน้าได้ ส่วนการบันทึกจ่ายอยู่ที่ฝั่งเพื่อนซึ่งเป็นคนรับเงิน
+</p>
+
+<div class="bg-white rounded-2xl border border-rose-100 shadow-sm p-4 mb-4 grid grid-cols-2 gap-3">
+    <div>
+        <p class="text-[11px] text-slate-400">ยอดผ่อนที่เราค้างทั้งหมด</p>
+        <p class="text-2xl font-black text-rose-500 leading-tight"><?= baht($myDebtRemain) ?> ฿</p>
+    </div>
+    <div>
+        <p class="text-[11px] text-slate-400">ถึงกำหนดแล้ว รอจ่าย</p>
+        <p class="text-2xl font-black <?= $myDebtDue > 0.009 ? 'text-amber-500' : 'text-slate-300' ?> leading-tight"><?= baht($myDebtDue) ?> ฿</p>
+    </div>
+</div>
+
+<?php foreach ($myDebts as $p):
+    $total   = (float) $p['monthly_amount'] * (int) $p['months'];
+    $pays    = $debtPaidById[(int) $p['id']] ?? [];
+    $paid    = 0; foreach ($pays as $pm) $paid += (float) $pm['amount'];
+    $remain  = max(0, round($total - $paid, 2));
+    $pct     = $total > 0 ? min(100, round($paid / $total * 100)) : 0;
+    $monthsPaid = (float) $p['monthly_amount'] > 0 ? floor($paid / (float) $p['monthly_amount']) : 0;
+    $due     = installments_due_count($p['start_date'] ?? null, (int) $p['months']);
+    $owing   = installment_due_outstanding($p, $paid);   // ถึงกำหนดแล้วแต่ยังไม่จ่าย
+    $done    = $remain < 0.01;
+    // งวดถัดไปครบกำหนดเมื่อไหร่ (ช่วยตอบว่า "ยอดจะขึ้นอีกทีวันไหน")
+    $base    = !empty($p['start_date']) ? substr($p['start_date'], 0, 10) : substr($p['created_at'] ?? '', 0, 10);
+    $nextDue = (!$done && $base && $due < (int) $p['months']) ? date('Y-m-d', strtotime("+$due months", strtotime($base))) : null;
+?>
+    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mb-4">
+        <div class="flex items-center gap-3 mb-3">
+            <?= avatar($p['payee_id'], $p['payee']['name'] ?? '?', 'w-10 h-10 text-sm') ?>
+            <div class="flex-1 min-w-0">
+                <p class="font-bold text-slate-800 truncate"><?= htmlspecialchars($p['title']) ?></p>
+                <p class="text-xs text-slate-400">
+                    ผ่อนให้ <?= htmlspecialchars($p['payee']['name'] ?? '?') ?> · เดือนละ <?= baht($p['monthly_amount']) ?> × <?= (int) $p['months'] ?> เดือน
+                </p>
+            </div>
+            <?php if ($done): ?>
+                <span class="text-xs bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-full font-medium flex items-center gap-1"><i data-lucide="check" class="w-3.5 h-3.5"></i> ครบแล้ว</span>
+            <?php elseif ($owing > 0.009): ?>
+                <span class="text-xs bg-amber-50 text-amber-600 px-2.5 py-1 rounded-full font-medium flex items-center gap-1"><i data-lucide="alert-circle" class="w-3.5 h-3.5"></i> ค้าง <?= baht($owing) ?> ฿</span>
+            <?php endif; ?>
+        </div>
+
+        <div class="flex justify-between text-xs text-slate-400 mb-1">
+            <span>จ่ายแล้ว <?= baht($paid) ?> / <?= baht($total) ?> ฿ (<?= (int) $monthsPaid ?>/<?= (int) $p['months'] ?> เดือน)</span>
+            <span class="font-semibold <?= $done ? 'text-emerald-600' : 'text-rose-500' ?>">เหลือ <?= baht($remain) ?> ฿</span>
+        </div>
+        <div class="h-2 bg-slate-100 rounded-full overflow-hidden mb-3">
+            <div class="h-full bg-gradient-to-r from-rose-300 to-rose-400" style="width: <?= $pct ?>%"></div>
+        </div>
+
+        <!-- ตอบคำถาม "ยอดจะขึ้นอีกทีวันไหน" ให้เห็นชัด ๆ -->
+        <div class="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400">
+            <span>เริ่ม <?= !empty($p['start_date']) ? thai_short_date($p['start_date']) : 'ไม่ได้ตั้งวัน (นับครบทุกงวดทันที)' ?></span>
+            <span>ถึงกำหนดแล้ว <?= (int) $due ?>/<?= (int) $p['months'] ?> งวด</span>
+            <?php if ($nextDue): ?>
+                <span class="text-emerald-600 font-semibold">งวดถัดไป <?= thai_short_date($nextDue) ?></span>
+            <?php endif; ?>
+        </div>
+
+        <?php if ($pays): ?>
+        <div class="mt-3 space-y-1 js-more-list" data-show="4">
+            <?php foreach ($pays as $pm): ?>
+                <div class="flex items-center gap-2 text-xs text-slate-500">
+                    <i data-lucide="<?= $pm['source'] === 'prepaid' ? 'wallet' : 'banknote' ?>" class="w-3.5 h-3.5 text-emerald-500"></i>
+                    <span><?= date('d/m/y', strtotime($pm['paid_at'])) ?></span>
+                    <span class="text-slate-400"><?= $pm['source'] === 'prepaid' ? 'หักเงินจ่ายไว้ก่อน' : 'จ่ายสด/โอน' ?></span>
+                    <span class="ml-auto font-semibold text-slate-700"><?= baht($pm['amount']) ?> ฿</span>
+                </div>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+    </div>
+<?php endforeach; ?>
+<?php endif; ?>
 
 <?php endif; // myMember ?>
 <?php layout_foot(); ?>

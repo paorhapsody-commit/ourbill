@@ -22,13 +22,9 @@ if ($validFriend && $myMember > 0) {
 }
 $timeline = $validFriend && $myMember > 0 ? friend_timeline($myMember, $fid) : [];
 
-$thMonth = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-
-/** วันที่แบบไทยสั้น ๆ จาก timestamp ของ Supabase */
+/** วันที่แบบไทยสั้น ๆ (thai_short_date อยู่ใน config.php) */
 function tl_thai_day($ts) {
-    global $thMonth;
-    $u = $ts ? ts_thai($ts) : 0;
-    return $u ? (int) date('j', $u) . ' ' . $thMonth[(int) date('n', $u)] . ' ' . (date('Y', $u) + 543) % 100 : 'ไม่ระบุวันที่';
+    return thai_short_date($ts) ?: 'ไม่ระบุวันที่';
 }
 /** ยอดพร้อมเครื่องหมาย (0 ไม่ใส่เครื่องหมาย) */
 function tl_signed($v) {
