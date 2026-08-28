@@ -601,18 +601,74 @@ function friend_timeline($myMember, $friendId) {
         $ids = implode(',', array_map(fn($p) => (int) $p['id'], $plans));
         $payeeOf = [];
         foreach ($plans as $p) { $payeeOf[(int) $p['id']] = (int) $p['payee_id']; }
-        foreach (sb_rows(sb_get('installment_payments?installment_id=in.(' . $ids . ')&select=id,installment_id,amount,source,paid_at')) as $pm) {
+        foreach (sb_rows(sb_get('installment_payments?installment_id=in.(' . $ids . ')&select=id,installment_id,amount,source,paid_at,note')) as $pm) {
             $iid = (int) $pm['installment_id']; $amt = (float) $pm['amount'];
             $friendPays = ($payeeOf[$iid] ?? 0) === $me;           // เพื่อนเป็นคนผ่อน -> จ่ายลดที่เพื่อนติดเรา (impact -)
             $ev[] = ['ts' => $pm['paid_at'] ?? '', 'icon' => 'banknote',
                      'title' => ($friendPays ? 'เพื่อนจ่ายงวด: ' : 'เราจ่ายงวด: ') . ($titleOf[$iid] ?? '-'),
                      'sub'   => $friendPays ? 'หนี้ที่เพื่อนติดเราลดลง' : 'หนี้ที่เราติดเพื่อนลดลง',
-                     'impact' => $friendPays ? -$amt : $amt];
+                     'impact' => $friendPays ? -$amt : $amt, 'note' => $pm['note'] ?? ''];
         }
     }
 
     usort($ev, fn($a, $z) => strcmp($z['ts'], $a['ts']));
     return $ev;
+}
+
+/** แถวนี้เกิดจากการกด "เคลียร์ยอด" ไหม (reconcile_with_friend ใส่ note ให้ทุกแถวที่มันสร้าง) */
+function tl_is_reconcile($t) {
+    return !empty($t['note']) && mb_strpos($t['note'], 'เคลียร์') !== false;
+}
+/** แถว "ส่วนต่างหลังเคลียร์" = ยอดที่ยกไปเป็นยอดตั้งต้นของรอบถัดไป */
+function tl_is_carry($t) {
+    return !empty($t['note']) && mb_strpos($t['note'], 'ส่วนต่าง') !== false;
+}
+
+/**
+ * ตัดไทม์ไลน์เป็น "รอบ" — แต่ละรอบจบที่การกดเคลียร์ยอด 1 ครั้ง
+ * ทำให้ยอดสะสมเริ่มนับใหม่ทุกรอบ แทนที่จะบวกยาวตั้งแต่ธุรกรรมแรกจนงง
+ * @return array เรียงรอบเก่า -> ใหม่ · แต่ละรอบ ['open'=>ยอดยกมา, 'items'=>[เก่า->ใหม่], 'closed_at'=>ts|null]
+ *               รอบสุดท้ายคือรอบปัจจุบัน (closed_at = null)
+ */
+function tl_split_rounds($timeline) {
+    $asc    = array_reverse($timeline);          // เก่า -> ใหม่
+    $rounds = [];
+    $cur    = ['open' => 0.0, 'items' => [], 'closed_at' => null];
+    $i = 0; $n = count($asc);
+
+    while ($i < $n) {
+        if (!tl_is_reconcile($asc[$i])) { $cur['items'][] = $asc[$i]; $i++; continue; }
+
+        // เจอกลุ่มการเคลียร์ (หลายแถวเกิดพร้อมกัน) -> กินทั้งกลุ่มแล้วปิดรอบ
+        $carry = 0.0;
+        while ($i < $n && tl_is_reconcile($asc[$i])) {
+            if (tl_is_carry($asc[$i])) $carry += (float) $asc[$i]['impact'];  // ยกไปรอบหน้า
+            else                       $cur['items'][] = $asc[$i];            // เป็นการปิดยอดของรอบนี้
+            $i++;
+        }
+        $cur['closed_at'] = $asc[$i - 1]['ts'] ?? null;
+        $rounds[] = $cur;
+        $cur = ['open' => round($carry, 2), 'items' => [], 'closed_at' => null];
+    }
+    $rounds[] = $cur;                             // รอบปัจจุบัน (ยังไม่ปิด)
+    return $rounds;
+}
+
+/**
+ * รายการที่ "ประกอบเป็นยอดคงค้างตอนนี้" = เฉพาะรอบปัจจุบัน + ยอดที่ยกมาจากรอบก่อน
+ * ใช้กับ modal เคลียร์หนี้ — เดิมส่งไทม์ไลน์ทั้งหมดไป ทำให้โชว์รายการที่เคลียร์ไปแล้วปนมาด้วย
+ * @return array เรียงใหม่ -> เก่า (รูปแบบเดียวกับ friend_timeline)
+ */
+function friend_open_items($timeline) {
+    $rounds = tl_split_rounds($timeline);
+    $cur    = end($rounds) ?: ['open' => 0.0, 'items' => []];
+    $items  = array_reverse($cur['items']);       // ใหม่ -> เก่า
+
+    if (abs((float) $cur['open']) > 0.009) {
+        $items[] = ['ts' => '', 'icon' => 'corner-down-right', 'title' => 'ยกยอดมาจากรอบก่อน',
+                    'sub' => 'คงค้างหลังเคลียร์ครั้งล่าสุด', 'impact' => (float) $cur['open']];
+    }
+    return $items;
 }
 
 /**

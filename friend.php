@@ -22,6 +22,23 @@ if ($validFriend && $myMember > 0) {
 }
 $timeline = $validFriend && $myMember > 0 ? friend_timeline($myMember, $fid) : [];
 
+$thMonth = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+
+/** วันที่แบบไทยสั้น ๆ จาก timestamp ของ Supabase */
+function tl_thai_day($ts) {
+    global $thMonth;
+    $u = $ts ? ts_thai($ts) : 0;
+    return $u ? (int) date('j', $u) . ' ' . $thMonth[(int) date('n', $u)] . ' ' . (date('Y', $u) + 543) % 100 : 'ไม่ระบุวันที่';
+}
+/** ยอดพร้อมเครื่องหมาย (0 ไม่ใส่เครื่องหมาย) */
+function tl_signed($v) {
+    return abs($v) < 0.009 ? '0.00' : (($v > 0 ? '+' : '−') . baht(abs($v)));
+}
+/** class สีตามทิศทางยอด */
+function tl_tone($v) {
+    return abs($v) < 0.009 ? 'text-slate-400' : ($v > 0 ? 'text-emerald-600' : 'text-rose-500');
+}
+
 layout_head($friendName, 'friends.php');
 ?>
 
@@ -119,91 +136,128 @@ layout_head($friendName, 'friends.php');
         ยังไม่มีธุรกรรมกับเพื่อนคนนี้
     </div>
 <?php else:
-    /* ยอดสะสม: ไล่จากรายการเก่าสุดขึ้นมา เพื่อให้แต่ละแถวบอกได้ว่า "ณ ตอนนั้นยอดสุทธิเท่าไหร่"
-       ช่วยไล่ที่มาของยอดรวมด้านบนได้ว่ามาจากไหน (ตัว timeline เรียงใหม่->เก่า จึงต้องวนกลับทาง) */
-    $running = 0.0;
-    $rows    = [];
-    foreach (array_reverse($timeline) as $t) {
-        $running += round((float) $t['impact'], 2);
-        $t['running'] = round($running, 2);
-        $rows[] = $t;
-    }
-    $rows = array_reverse($rows);           // กลับมาเรียงใหม่ล่าสุดก่อนเหมือนเดิม
-
-    // จัดกลุ่มตามวัน — เดิมไหลติดกัน 100 แถวไม่มีตัวแบ่ง
-    $byDay = [];
-    foreach ($rows as $t) {
-        $d = !empty($t['ts']) ? date('Y-m-d', ts_thai($t['ts'])) : '';
-        $byDay[$d][] = $t;
-    }
-    $thMonth = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    $rounds  = tl_split_rounds($timeline);   // เก่า -> ใหม่
+    $total   = count($rounds);
 ?>
     <!-- คำอธิบายเครื่องหมาย: +/− เป็นผลต่อ "ยอดหนี้" ไม่ใช่ทิศทางเงินสด -->
     <div class="bg-slate-50 border border-slate-100 rounded-xl p-3 mb-4 text-[11px] text-slate-500 space-y-1">
         <p>ตัวเลขคือ <b>ผลต่อยอดสุทธิ</b> ระหว่างเรากับเพื่อน ไม่ใช่ทิศทางเงินสด</p>
         <p><span class="text-emerald-600 font-bold">+</span> ทำให้เพื่อนติดเรามากขึ้น (หรือหนี้เราลดลง)
            · <span class="text-rose-500 font-bold">−</span> ทำให้เราติดเพื่อนมากขึ้น (หรือหนี้เพื่อนลดลง)</p>
-        <p><span class="inline-block px-1.5 py-0.5 rounded bg-white border border-dashed border-slate-300 text-slate-400">เส้นประ</span>
-           = งวดผ่อนที่ระบบตั้งยอดให้ตามรอบเดือน ไม่ใช่รายการที่มีคนกดบันทึก</p>
+        <p><b>ยอดสะสม</b> = ยอดคงค้างนับเฉพาะ<b>ในรอบนั้น</b> (เริ่มใหม่ทุกครั้งที่กดเคลียร์ยอด)</p>
     </div>
 
-    <div class="js-more-list space-y-3" data-show="6" data-unit="วัน">
-        <?php foreach ($byDay as $day => $items):
-            $dayTotal = 0; foreach ($items as $t) { $dayTotal += round((float) $t['impact'], 2); }
-            $dayTotal = round($dayTotal, 2);
-            $u = $day ? strtotime($day . ' 12:00:00') : 0; ?>
-            <div>
-                <!-- หัววัน + ผลรวมของวันนั้น -->
-                <div class="flex items-baseline gap-2 px-1 mb-1.5">
-                    <span class="text-xs font-bold text-slate-500">
-                        <?= $u ? (int) date('j', $u) . ' ' . $thMonth[(int) date('n', $u)] . ' ' . (date('Y', $u) + 543) % 100 : 'ไม่ระบุวันที่' ?>
-                    </span>
-                    <span class="text-[11px] text-slate-300">·</span>
-                    <span class="text-[11px] font-semibold <?= abs($dayTotal) < 0.009 ? 'text-slate-400' : ($dayTotal > 0 ? 'text-emerald-600' : 'text-rose-500') ?>">
-                        รวมวันนี้ <?= abs($dayTotal) < 0.009 ? '0.00' : (($dayTotal > 0 ? '+' : '−') . baht(abs($dayTotal))) ?> ฿
-                    </span>
-                    <span class="text-[11px] text-slate-300 ml-auto"><?= count($items) ?> รายการ</span>
-                </div>
+    <?php // แสดงรอบใหม่สุดก่อน
+    for ($ri = $total - 1; $ri >= 0; $ri--):
+        $r       = $rounds[$ri];
+        $isNow   = ($r['closed_at'] === null);
+        $roundNo = $ri + 1;
 
-                <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                    <?php foreach ($items as $t):
-                        $imp  = round((float) $t['impact'], 2);
-                        $pos  = $imp >= 0;
-                        $auto = !empty($t['auto']);
-                        // รายการที่เกิดจากการกด "เคลียร์ยอด" ครั้งเดียวจะแตกเป็นหลายแถว — ติดป้ายให้รู้ว่าชุดเดียวกัน
-                        $fromReconcile = !empty($t['note']) && mb_strpos($t['note'], 'เคลียร์') !== false; ?>
-                        <div class="flex items-center gap-3 px-4 py-3 border-b border-slate-50 last:border-0 <?= $auto ? 'bg-slate-50/60' : '' ?>">
-                            <span class="grid place-items-center w-9 h-9 rounded-xl shrink-0 <?= $auto ? 'bg-white border border-dashed border-slate-300 text-slate-400' : ($pos ? 'bg-emerald-50 text-emerald-500' : 'bg-rose-50 text-rose-500') ?>">
-                                <i data-lucide="<?= htmlspecialchars($t['icon']) ?>" class="w-4 h-4"></i>
-                            </span>
-                            <div class="min-w-0 flex-1">
-                                <p class="text-sm font-semibold text-slate-700 truncate">
-                                    <?= htmlspecialchars($t['title']) ?>
-                                    <?php if ($fromReconcile): ?>
-                                        <span class="ml-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 align-middle">จากการเคลียร์ยอด</span>
-                                    <?php endif; ?>
-                                </p>
-                                <p class="text-xs text-slate-400 truncate">
-                                    <?= htmlspecialchars($t['sub']) ?>
-                                    <?php if (!empty($t['ts'])): ?> · <?= date('H:i', ts_thai($t['ts'])) ?><?php endif; ?>
-                                </p>
-                            </div>
-                            <div class="text-right shrink-0">
-                                <p class="font-bold text-sm <?= abs($imp) < 0.009 ? 'text-slate-400' : ($pos ? 'text-emerald-600' : 'text-rose-500') ?>">
-                                    <?= $pos ? '+' : '−' ?><?= baht(abs($imp)) ?> ฿
-                                </p>
-                                <p class="text-[10px] text-slate-300 mt-0.5">
-                                    ยอดสะสม <?= abs($t['running']) < 0.009 ? '0.00' : (($t['running'] > 0 ? '+' : '−') . baht(abs($t['running']))) ?>
-                                </p>
-                            </div>
+        // ยอดสะสมภายในรอบ: เริ่มจากยอดยกมา แล้วบวกทีละรายการ (items เรียงเก่า->ใหม่)
+        $run  = round((float) $r['open'], 2);
+        $rows = [];
+        foreach ($r['items'] as $t) {
+            $run += round((float) $t['impact'], 2);
+            $t['running'] = round($run, 2);
+            $rows[] = $t;
+        }
+        $close = round($run, 2);              // ยอดปิดรอบ (รอบปัจจุบัน = ยอดคงค้างตอนนี้)
+        $rows  = array_reverse($rows);        // ใหม่ -> เก่า
+
+        // จัดกลุ่มตามวันภายในรอบ
+        $byDay = [];
+        foreach ($rows as $t) {
+            $byDay[!empty($t['ts']) ? date('Y-m-d', ts_thai($t['ts'])) : ''][] = $t;
+        }
+        $spanFrom = !empty($r['items']) ? tl_thai_day($r['items'][0]['ts'] ?? '') : null;
+        $spanTo   = $r['closed_at'] ? tl_thai_day($r['closed_at']) : null;
+    ?>
+        <?php // รอบปัจจุบันกางไว้ · รอบที่ปิดแล้วพับเก็บ (กดดูได้) ?>
+        <?php if ($isNow): ?><div class="mb-5"><?php else: ?><details class="mb-3 group"><?php endif; ?>
+
+            <?php $head = $isNow ? 'div' : 'summary'; ?>
+            <<?= $head ?> class="flex items-center gap-2 flex-wrap px-3 py-2.5 rounded-xl mb-2 <?= $isNow ? 'bg-emerald-50 border border-emerald-100' : 'bg-white border border-slate-100 cursor-pointer select-none hover:border-emerald-200' ?>">
+                <?php if (!$isNow): ?><i data-lucide="chevron-right" class="w-4 h-4 text-slate-300 group-open:rotate-90 transition shrink-0"></i><?php endif; ?>
+                <span class="text-sm font-bold <?= $isNow ? 'text-emerald-700' : 'text-slate-600' ?>">
+                    <?= $isNow ? 'รอบปัจจุบัน' : 'รอบที่ ' . $roundNo ?>
+                </span>
+                <span class="text-[11px] text-slate-400">
+                    <?php if ($spanFrom && $spanTo): ?><?= $spanFrom ?> – <?= $spanTo ?>
+                    <?php elseif ($spanFrom): ?>ตั้งแต่ <?= $spanFrom ?>
+                    <?php elseif ($spanTo): ?>ปิด <?= $spanTo ?>
+                    <?php else: ?>ยังไม่มีรายการใหม่<?php endif; ?>
+                    · <?= count($r['items']) ?> รายการ
+                </span>
+                <span class="ml-auto text-right shrink-0">
+                    <span class="text-xs font-bold <?= tl_tone($close) ?>"><?= tl_signed($close) ?> ฿</span>
+                    <span class="block text-[10px] text-slate-400"><?= $isNow ? 'คงค้างตอนนี้' : 'ปิดรอบ' ?></span>
+                </span>
+            </<?= $head ?>>
+
+            <?php if (abs((float) $r['open']) > 0.009): ?>
+                <div class="flex items-center gap-2 px-4 py-2 mb-2 rounded-xl bg-white border border-dashed border-slate-200 text-xs">
+                    <i data-lucide="corner-down-right" class="w-3.5 h-3.5 text-slate-300 shrink-0"></i>
+                    <span class="text-slate-500">ยกยอดมาจากรอบก่อน</span>
+                    <span class="ml-auto font-bold <?= tl_tone($r['open']) ?>"><?= tl_signed($r['open']) ?> ฿</span>
+                </div>
+            <?php endif; ?>
+
+            <?php if (empty($rows)): ?>
+                <div class="bg-white rounded-2xl border border-dashed border-slate-200 p-6 text-center text-slate-400 text-xs">
+                    ยังไม่มีรายการใหม่หลังเคลียร์ครั้งล่าสุด
+                </div>
+            <?php else: ?>
+            <div class="js-more-list space-y-3" data-show="5" data-unit="วัน">
+                <?php foreach ($byDay as $day => $items):
+                    $dayTotal = 0; foreach ($items as $t) { $dayTotal += round((float) $t['impact'], 2); }
+                    $dayTotal = round($dayTotal, 2); ?>
+                    <div>
+                        <!-- หัววัน + ผลรวมของวันนั้น -->
+                        <div class="flex items-baseline gap-2 px-1 mb-1.5">
+                            <span class="text-xs font-bold text-slate-500"><?= $day ? tl_thai_day($day . 'T12:00:00+07:00') : 'ไม่ระบุวันที่' ?></span>
+                            <span class="text-[11px] text-slate-300">·</span>
+                            <span class="text-[11px] font-semibold <?= tl_tone($dayTotal) ?>">รวมวันนี้ <?= tl_signed($dayTotal) ?> ฿</span>
+                            <span class="text-[11px] text-slate-300 ml-auto"><?= count($items) ?> รายการ</span>
                         </div>
-                    <?php endforeach; ?>
-                </div>
+
+                        <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                            <?php foreach ($items as $t):
+                                $imp  = round((float) $t['impact'], 2);
+                                $pos  = $imp >= 0;
+                                $auto = !empty($t['auto']); ?>
+                                <div class="flex items-center gap-3 px-4 py-3 border-b border-slate-50 last:border-0 <?= $auto ? 'bg-slate-50/60' : '' ?>">
+                                    <span class="grid place-items-center w-9 h-9 rounded-xl shrink-0 <?= $auto ? 'bg-white border border-dashed border-slate-300 text-slate-400' : ($pos ? 'bg-emerald-50 text-emerald-500' : 'bg-rose-50 text-rose-500') ?>">
+                                        <i data-lucide="<?= htmlspecialchars($t['icon']) ?>" class="w-4 h-4"></i>
+                                    </span>
+                                    <div class="min-w-0 flex-1">
+                                        <p class="text-sm font-semibold text-slate-700 truncate">
+                                            <?= htmlspecialchars($t['title']) ?>
+                                            <?php if (tl_is_reconcile($t)): ?>
+                                                <span class="ml-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 align-middle">ปิดรอบ</span>
+                                            <?php endif; ?>
+                                        </p>
+                                        <p class="text-xs text-slate-400 truncate">
+                                            <?= htmlspecialchars($t['sub']) ?>
+                                            <?php if (!empty($t['ts'])): ?> · <?= date('H:i', ts_thai($t['ts'])) ?><?php endif; ?>
+                                        </p>
+                                    </div>
+                                    <div class="text-right shrink-0">
+                                        <p class="font-bold text-sm <?= tl_tone($imp) ?>"><?= $pos ? '+' : '−' ?><?= baht(abs($imp)) ?> ฿</p>
+                                        <p class="text-[10px] text-slate-300 mt-0.5">ยอดสะสม <?= tl_signed($t['running']) ?></p>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
             </div>
-        <?php endforeach; ?>
-    </div>
+            <?php endif; ?>
+
+        <?php if ($isNow): ?></div><?php else: ?></details><?php endif; ?>
+    <?php endfor; ?>
 <?php endif; ?>
 
 <?php endif; // valid ?>
-<?php reconcile_modal($validFriend && $myMember ? [$fid => $timeline] : []); ?>
+<?php // modal โชว์เฉพาะรายการที่ประกอบเป็นยอดคงค้างตอนนี้ (รอบปัจจุบัน) ไม่เอาที่เคลียร์ไปแล้ว ?>
+<?php reconcile_modal($validFriend && $myMember ? [$fid => friend_open_items($timeline)] : []); ?>
 <?php layout_foot(); ?>

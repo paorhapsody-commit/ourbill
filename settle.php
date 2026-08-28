@@ -57,8 +57,11 @@ foreach ($friends as $f) {
     if (abs((float) $f['net']) > 0.009) $pending[] = $f;
 }
 // รายการย่อยต่อเพื่อน สำหรับ modal เคลียร์
+// เอาเฉพาะรอบปัจจุบัน (หลังเคลียร์ครั้งล่าสุด) — ที่เคลียร์ไปแล้วไม่ได้ประกอบเป็นยอดนี้
 $rcItems = [];
-foreach ($pending as $f) { $rcItems[$f['id']] = friend_timeline($myMember, (int) $f['id']); }
+foreach ($pending as $f) {
+    $rcItems[$f['id']] = friend_open_items(friend_timeline($myMember, (int) $f['id']));
+}
 
 layout_head('เคลียร์หนี้', 'settle.php');
 ?>
