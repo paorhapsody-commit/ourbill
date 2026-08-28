@@ -528,8 +528,13 @@ function unified_balances($myMember) {
 
 /**
  * ไทม์ไลน์รวมทุกธุรกรรมระหว่างเรากับเพื่อนคนเดียว (บิล + เคลียร์ + ถือเงิน + ผ่อน)
- * คืน list เรียงใหม่ล่าสุดก่อน: [ts, icon, title, sub, impact]
+ * คืน list เรียงใหม่ล่าสุดก่อน: [ts, icon, title, sub, impact, auto, note]
  *   impact > 0 = ทำให้ "เพื่อนติดเรา" มากขึ้น | impact < 0 = ทำให้ "เราติดเพื่อน" มากขึ้น
+ *   auto  = true คือรายการที่ระบบคำนวณให้เอง (งวดผ่อนที่ถึงกำหนด) ไม่ใช่ธุรกรรมที่มีคนกดบันทึก
+ *   note  = โน้ตของรายการ ใช้ติดป้ายว่ามาจากการกด "เคลียร์ยอด"
+ *
+ * ทุก sub ต้องจบด้วย "ผลที่เกิด" (เพื่อนติดเราเพิ่ม / เราติดเพื่อนเพิ่ม / หนี้ใครลดลง)
+ * เพราะเครื่องหมาย +/− เป็นผลต่อ "ยอดหนี้" ไม่ใช่ทิศทางเงินสด — ถ้าไม่บอกจะอ่านกลับด้าน
  */
 function friend_timeline($myMember, $friendId) {
     $me = (int) $myMember; $fr = (int) $friendId;
@@ -541,21 +546,23 @@ function friend_timeline($myMember, $friendId) {
         foreach (($e['expense_splits'] ?? []) as $s) {
             if ((int) $s['user_id'] !== $fr) continue;
             $ev[] = ['ts' => $e['spent_at'] ?? $e['created_at'] ?? '', 'icon' => 'receipt', 'title' => 'บิล: ' . ($e['title'] ?? '-'),
-                     'sub' => 'เราจ่ายก่อน · ส่วนแบ่งของเพื่อน', 'impact' => (float) $s['amount']];
+                     'sub' => 'เราจ่ายก่อน · เพื่อนติดเราเพิ่ม', 'impact' => (float) $s['amount']];
         }
     }
     // (2) บิลที่เพื่อนจ่ายก่อน + เรามีส่วนหาร -> เราติดเพื่อน
     foreach (sb_rows(sb_get('expense_splits?user_id=eq.' . $me . '&select=amount,expenses(id,title,created_at,spent_at,paid_by)')) as $s) {
         if ((int) ($s['expenses']['paid_by'] ?? 0) !== $fr) continue;
         $ev[] = ['ts' => $s['expenses']['spent_at'] ?? $s['expenses']['created_at'] ?? '', 'icon' => 'receipt', 'title' => 'บิล: ' . ($s['expenses']['title'] ?? '-'),
-                 'sub' => 'เพื่อนจ่ายก่อน · ส่วนแบ่งของเรา', 'impact' => -(float) $s['amount']];
+                 'sub' => 'เพื่อนจ่ายก่อน · เราติดเพื่อนเพิ่ม', 'impact' => -(float) $s['amount']];
     }
     // (3) เคลียร์หนี้ (settlements)
     foreach (sb_rows(sb_get('settlements?select=from_user,to_user,amount,note,created_at'
             . '&or=(and(from_user.eq.' . $me . ',to_user.eq.' . $fr . '),and(from_user.eq.' . $fr . ',to_user.eq.' . $me . '))')) as $st) {
         $amt = (float) $st['amount']; $iPaid = (int) $st['from_user'] === $me;
-        $ev[] = ['ts' => $st['created_at'] ?? '', 'icon' => 'arrow-right-left', 'title' => 'เคลียร์หนี้',
-                 'sub' => $iPaid ? 'เราโอนคืนเพื่อน' : 'เพื่อนโอนคืนเรา', 'impact' => $iPaid ? $amt : -$amt];
+        $ev[] = ['ts' => $st['created_at'] ?? '', 'icon' => 'arrow-right-left',
+                 'title' => $iPaid ? 'เราโอนคืนเพื่อน' : 'เพื่อนโอนคืนเรา',
+                 'sub'   => $iPaid ? 'หนี้ที่เราติดเพื่อนลดลง' : 'หนี้ที่เพื่อนติดเราลดลง',
+                 'impact' => $iPaid ? $amt : -$amt, 'note' => $st['note'] ?? ''];
     }
     // (4) เงินที่ถือไว้ (holdings)
     foreach (sb_rows(sb_get('holdings?select=holder_id,owner_id,amount,note,created_at'
@@ -563,9 +570,12 @@ function friend_timeline($myMember, $friendId) {
         $amt = (float) $h['amount']; $weHold = (int) $h['holder_id'] === $me;
         // เราถือเงินเพื่อน (amt>0) = เราติดเพื่อน (impact -) ; เพื่อนถือเงินเรา = เพื่อนติดเรา (impact +)
         $impact = $weHold ? -$amt : $amt;
-        $sub = $weHold ? ($amt >= 0 ? 'รับเงินเพื่อนมาถือ' : 'คืนเงินให้เพื่อน')
-                       : ($amt >= 0 ? 'เพื่อนถือเงินเรา' : 'เพื่อนคืนเงินเรา');
-        $ev[] = ['ts' => $h['created_at'] ?? '', 'icon' => 'piggy-bank', 'title' => 'เงินที่ถือไว้', 'sub' => $sub, 'impact' => $impact];
+        // ชื่อรายการบอกไปเลยว่าเกิดอะไร (เดิมทุกแถวชื่อ "เงินที่ถือไว้" เหมือนกันหมด 4 ความหมาย)
+        [$title, $sub] = $weHold
+            ? ($amt >= 0 ? ['รับเงินเพื่อนมาถือ', 'เราติดเพื่อนเพิ่ม']   : ['คืนเงินให้เพื่อน', 'หนี้ที่เราติดเพื่อนลดลง'])
+            : ($amt >= 0 ? ['เพื่อนถือเงินเราไว้', 'เพื่อนติดเราเพิ่ม'] : ['เพื่อนคืนเงินเรา', 'หนี้ที่เพื่อนติดเราลดลง']);
+        $ev[] = ['ts' => $h['created_at'] ?? '', 'icon' => 'piggy-bank', 'title' => $title,
+                 'sub' => $sub, 'impact' => $impact, 'note' => $h['note'] ?? ''];
     }
     // (5) ผ่อนรายเดือน: ครบกำหนดทีละงวด (ตาม start_date) + การจ่ายแต่ละงวด
     $plans = sb_rows(sb_get('installments?select=id,title,monthly_amount,months,payer_id,payee_id,start_date,created_at'
@@ -581,8 +591,11 @@ function friend_timeline($myMember, $friendId) {
             $base  = !empty($p['start_date']) ? substr($p['start_date'], 0, 10) : substr($p['created_at'] ?? '', 0, 10);
             for ($n = 0; $n < $due; $n++) {
                 $ts = $base ? date('Y-m-d', strtotime("+$n months", strtotime($base))) : ($p['created_at'] ?? '');
-                $ev[] = ['ts' => $ts, 'icon' => 'calendar-clock', 'title' => 'ผ่อนงวดที่ ' . ($n + 1) . '/' . (int) $p['months'] . ': ' . $p['title'],
-                         'sub' => $friendPays ? 'ถึงกำหนดเพื่อนผ่อน' : 'ถึงกำหนดเราผ่อน', 'impact' => $friendPays ? $monthly : -$monthly];
+                // auto = ระบบตั้งยอดให้ตามรอบเดือน ไม่ใช่ธุรกรรมที่มีคนกดบันทึก
+                $ev[] = ['ts' => $ts, 'icon' => 'calendar-clock', 'auto' => true,
+                         'title' => 'ถึงกำหนดงวดที่ ' . ($n + 1) . '/' . (int) $p['months'] . ': ' . $p['title'],
+                         'sub'   => $friendPays ? 'เพื่อนผ่อนให้เรา · เพื่อนติดเราเพิ่ม' : 'เราผ่อนให้เพื่อน · เราติดเพื่อนเพิ่ม',
+                         'impact' => $friendPays ? $monthly : -$monthly];
             }
         }
         $ids = implode(',', array_map(fn($p) => (int) $p['id'], $plans));
@@ -591,8 +604,10 @@ function friend_timeline($myMember, $friendId) {
         foreach (sb_rows(sb_get('installment_payments?installment_id=in.(' . $ids . ')&select=id,installment_id,amount,source,paid_at')) as $pm) {
             $iid = (int) $pm['installment_id']; $amt = (float) $pm['amount'];
             $friendPays = ($payeeOf[$iid] ?? 0) === $me;           // เพื่อนเป็นคนผ่อน -> จ่ายลดที่เพื่อนติดเรา (impact -)
-            $ev[] = ['ts' => $pm['paid_at'] ?? '', 'icon' => 'banknote', 'title' => 'จ่ายงวด: ' . ($titleOf[$iid] ?? '-'),
-                     'sub' => $friendPays ? 'เพื่อนจ่ายงวด' : 'เราจ่ายงวดให้เพื่อน', 'impact' => $friendPays ? -$amt : $amt];
+            $ev[] = ['ts' => $pm['paid_at'] ?? '', 'icon' => 'banknote',
+                     'title' => ($friendPays ? 'เพื่อนจ่ายงวด: ' : 'เราจ่ายงวด: ') . ($titleOf[$iid] ?? '-'),
+                     'sub'   => $friendPays ? 'หนี้ที่เพื่อนติดเราลดลง' : 'หนี้ที่เราติดเพื่อนลดลง',
+                     'impact' => $friendPays ? -$amt : $amt];
         }
     }
 

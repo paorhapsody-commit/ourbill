@@ -196,7 +196,9 @@ function layout_foot() {
         var btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'js-more-btn w-full mt-2 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 text-sm font-semibold transition';
-        function label() { btn.textContent = 'ดูเพิ่ม (' + (items.length - shown) + ')'; }
+        // data-unit = หน่วยของสิ่งที่ซ่อน (เช่น "วัน") ไม่ใส่ = นับเป็นรายการเหมือนเดิม
+        var unit = box.dataset.unit ? ' ' + box.dataset.unit : '';
+        function label() { btn.textContent = 'ดูเพิ่ม (' + (items.length - shown) + unit + ')'; }
         btn.addEventListener('click', function () {
             shown = Math.min(items.length, shown + step);
             apply();
