@@ -43,10 +43,12 @@ foreach ($friends as $f) {
 /* ยอดดิบสองทางของ "เงินที่ถือไว้" — ใช้อธิบายว่าทำไมยอดสุทธิถึงไม่เท่ากับที่เราถือไว้จริง
  * (เดิมการ์ดหน้าแรกโชว์ยอดดิบฝั่งเดียว เลยไม่ตรงกับหน้าเงินเพื่อนที่หักลบสองทาง) */
 $heldByMe = 0; $heldByFriends = 0;
+$heldSince = null;          // รายการล่าสุดที่ทำให้ยอดดิบเปลี่ยน — ตอบว่า "ยอดนี้ตั้งแต่เมื่อไหร่"
 if ($myMember) {
-    foreach (sb_rows(sb_get('holdings?or=(holder_id.eq.' . $myMember . ',owner_id.eq.' . $myMember . ')&select=holder_id,amount')) as $h) {
+    foreach (sb_rows(sb_get('holdings?or=(holder_id.eq.' . $myMember . ',owner_id.eq.' . $myMember . ')&select=holder_id,amount,created_at&order=created_at.desc')) as $h) {
         if ((int) $h['holder_id'] === $myMember) $heldByMe      += (float) $h['amount'];
         else                                     $heldByFriends += (float) $h['amount'];
+        if ($heldSince === null) $heldSince = $h['created_at'];   // แถวแรก = ใหม่สุด
     }
 }
 
@@ -126,13 +128,20 @@ layout_head('หน้าหลัก', 'index.php');
     </div>
 
     <?php if ($heldByMe > 0.009 || $heldByFriends > 0.009): ?>
-        <!-- อธิบายว่ายอด "เงินที่ถือไว้" สุทธิมาจากการหักลบสองทาง ไม่ใช่จำนวนเงินที่ถืออยู่จริง -->
-        <p class="text-[11px] text-slate-400 px-1 mt-2 flex flex-wrap gap-x-3">
-            <span><i data-lucide="corner-down-right" class="w-3 h-3 inline-block align-middle text-slate-300"></i>
-                  เราถือเงินเพื่อนไว้ <b class="text-slate-500"><?= baht($heldByMe) ?> ฿</b></span>
-            <span>เพื่อนถือเงินเราไว้ <b class="text-slate-500"><?= baht($heldByFriends) ?> ฿</b></span>
-            <span class="text-slate-300">หักลบกันเหลือ <?= signed_baht($sumHold) ?></span>
-        </p>
+        <!-- อธิบายว่ายอด "เงินที่ถือไว้" สุทธิมาจากการหักลบสองทาง ไม่ใช่จำนวนเงินที่ถืออยู่จริง
+             + กดเข้าไปไล่ที่มาทีละรายการได้ที่หน้าเงินเพื่อน -->
+        <a href="holdings.php" class="block px-1 mt-2 group">
+            <p class="text-[11px] text-slate-400 flex flex-wrap gap-x-3 group-hover:text-slate-500">
+                <span><i data-lucide="corner-down-right" class="w-3 h-3 inline-block align-middle text-slate-300"></i>
+                      เราถือเงินเพื่อนไว้ <b class="text-slate-500"><?= baht($heldByMe) ?> ฿</b></span>
+                <span>เพื่อนถือเงินเราไว้ <b class="text-slate-500"><?= baht($heldByFriends) ?> ฿</b></span>
+                <span class="text-slate-300">หักลบกันเหลือ <?= signed_baht($sumHold) ?></span>
+            </p>
+            <p class="text-[11px] text-slate-300 group-hover:text-emerald-600 mt-0.5">
+                <?php if ($heldSince): ?>ยอดนี้ตั้งแต่ <?= thai_short_date($heldSince) ?> <?= date('H:i', ts_thai($heldSince)) ?> · <?php endif; ?>
+                กดดูที่มาทีละรายการ <i data-lucide="chevron-right" class="w-3 h-3 inline-block align-middle"></i>
+            </p>
+        </a>
     <?php endif; ?>
 </div>
 

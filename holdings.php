@@ -34,6 +34,19 @@ $rows = $myMember ? sb_rows(sb_get(
     . '&or=(holder_id.eq.' . $myMember . ',owner_id.eq.' . $myMember . ')&order=created_at.desc'
 )) : [];
 
+/* ยอดคงเหลือของ "ก้อนนั้น" หลังจากแต่ละรายการ + วันที่ยอดเปลี่ยนครั้งล่าสุด
+ * ตอบคำถาม "ยอดนี้เป็นเท่านี้มาตั้งแต่เมื่อไหร่" ซึ่งเดิมดูจากหน้าเว็บไม่ได้เลย
+ * ต้องไล่จากเก่าไปใหม่ แล้วค่อยกลับมาเรียงใหม่ล่าสุดก่อนตอนแสดงผล */
+$grossWe = 0; $grossFr = 0;          // ยอดดิบ: เราถือของเพื่อน / เพื่อนถือของเรา
+$sinceWe = null; $sinceFr = null;    // เวลาที่ยอดนั้นเปลี่ยนครั้งล่าสุด
+foreach (array_reverse($rows) as $h) {
+    if ((int) $h['holder_id'] === $myMember) { $grossWe += (float) $h['amount']; $sinceWe = $h['created_at']; }
+    else                                     { $grossFr += (float) $h['amount']; $sinceFr = $h['created_at']; }
+    $h['bucket_total'] = round((int) $h['holder_id'] === $myMember ? $grossWe : $grossFr, 2);
+    $hist[] = $h;
+}
+$hist = array_reverse($hist ?? []);
+
 // ยอดสุทธิต่อเพื่อน = เงินที่ถือไว้ + บิล/รายจ่าย + เคลียร์หนี้ (ไม่รวมผ่อนรายเดือน — มีหน้าแยก)
 //  custody > 0 = สุทธิแล้วเงินเพื่อนอยู่กับเรา (เราติดเพื่อน) | < 0 = เงินเราอยู่กับเพื่อน (เพื่อนติดเรา)
 $weHold = [];  // เงินเพื่อนที่อยู่กับเรา (สุทธิ)
@@ -116,6 +129,30 @@ $shownMine = array_filter($frHold, fn($v) => abs($v['net']) > 0.009);
     </div>
 </div>
 
+<?php if ($grossWe > 0.009 || $grossFr > 0.009): ?>
+<!-- ยอดดิบสองทาง + ยอดนี้เป็นแบบนี้มาตั้งแต่เมื่อไหร่ (การ์ดข้างบนเป็นยอดสุทธิ คนละตัวกัน) -->
+<div class="bg-slate-50 border border-slate-100 rounded-2xl p-3 mb-6 grid grid-cols-1 sm:grid-cols-2 gap-2">
+    <div class="bg-white rounded-xl px-3 py-2.5 border border-slate-100">
+        <p class="text-[11px] text-slate-400">เราถือเงินเพื่อนไว้ (ยอดดิบ ยังไม่หักบิล)</p>
+        <p class="font-bold text-slate-700"><?= baht($grossWe) ?> ฿</p>
+        <p class="text-[10px] text-slate-400 mt-0.5">
+            <?= $sinceWe ? 'ยอดนี้ตั้งแต่ ' . thai_short_date($sinceWe) . ' ' . date('H:i', ts_thai($sinceWe)) : 'ยังไม่มีรายการ' ?>
+        </p>
+    </div>
+    <div class="bg-white rounded-xl px-3 py-2.5 border border-slate-100">
+        <p class="text-[11px] text-slate-400">เพื่อนถือเงินเราไว้ (ยอดดิบ ยังไม่หักบิล)</p>
+        <p class="font-bold text-slate-700"><?= baht($grossFr) ?> ฿</p>
+        <p class="text-[10px] text-slate-400 mt-0.5">
+            <?= $sinceFr ? 'ยอดนี้ตั้งแต่ ' . thai_short_date($sinceFr) . ' ' . date('H:i', ts_thai($sinceFr)) : 'ยังไม่มีรายการ' ?>
+        </p>
+    </div>
+    <p class="sm:col-span-2 text-[11px] text-slate-400 px-1">
+        ยอดดิบสองก้อนนี้ยังไม่หักลบกัน · หักลบแล้วได้ <b class="<?= amount_tone($grossFr - $grossWe) ?>"><?= signed_baht($grossFr - $grossWe) ?> ฿</b>
+        ซึ่งเป็นตัวที่ใช้คิดยอดสุทธิ · ไล่ที่มาได้จาก<b>ประวัติล่าสุด</b>ด้านล่าง (คอลัมน์ขวาบอกยอดของก้อนนั้นหลังแต่ละรายการ)
+    </p>
+</div>
+<?php endif; ?>
+
 <!-- ฟอร์มเพิ่ม -->
 <form method="POST" class="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mb-6 space-y-4">
     <?= csrf_field() ?>
@@ -178,9 +215,9 @@ $shownMine = array_filter($frHold, fn($v) => abs($v['net']) > 0.009);
     <span class="text-rose-500 font-bold">−</span> เราติดเพื่อนเพิ่ม/หนี้เพื่อนลดลง
 </p>
 <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden js-more-list" data-show="10">
-    <?php if (empty($rows)): ?>
+    <?php if (empty($hist)): ?>
         <p class="p-8 text-center text-slate-400 text-sm">ยังไม่มีประวัติ</p>
-    <?php else: foreach ($rows as $h):
+    <?php else: foreach ($hist as $h):
         $amt       = (float) $h['amount'];
         $iAmHolder = (int) $h['holder_id'] === $myMember;
         $friend    = $iAmHolder ? ($h['owner']['name'] ?? '?') : ($h['holder']['name'] ?? '?');
@@ -218,7 +255,8 @@ $shownMine = array_filter($frHold, fn($v) => abs($v['net']) > 0.009);
             </div>
             <div class="text-right shrink-0">
                 <p class="font-bold <?= amount_tone($impact) ?>"><?= signed_baht($impact) ?> ฿</p>
-                <p class="text-[10px] text-slate-300 mt-0.5"><?= $bucket ?></p>
+                <!-- ยอดของก้อนนั้นหลังรายการนี้ — ไล่ดูได้ว่ายอดปัจจุบันเป็นแบบนี้มาตั้งแต่แถวไหน -->
+                <p class="text-[10px] text-slate-300 mt-0.5"><?= $bucket ?> → <?= baht($h['bucket_total']) ?></p>
             </div>
         </div>
     <?php endforeach; endif; ?>
