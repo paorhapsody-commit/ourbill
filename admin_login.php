@@ -5,6 +5,7 @@ if (is_admin()) { header('Location: admin.php'); exit; }
 
 $err = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
     $email = trim($_POST['email'] ?? '');
     $pass  = $_POST['password'] ?? '';
     if ($email === '' || $pass === '') {
@@ -59,6 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php endif; ?>
 
             <form method="POST" class="space-y-4">
+                <?= csrf_field() ?>
                 <div>
                     <label class="block text-sm font-semibold text-slate-200 mb-1.5">อีเมลผู้ดูแล</label>
                     <div class="relative">

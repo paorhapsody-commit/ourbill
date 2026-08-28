@@ -7,10 +7,48 @@ require_once '_layout.php';
 $id = intval($_GET['id'] ?? 0);
 if ($id <= 0) { header('Location: index.php'); exit; }
 
+$myMember   = (int) ($_SESSION['user']['member_id'] ?? 0);
+$accountId  = (int) ($_SESSION['user']['account_id'] ?? 0);
 $status_msg = '';
+
+/** หน้า "ไม่พบรายการ" — ใช้ทั้งกรณีไม่มีบิลจริง และกรณีไม่มีสิทธิ์
+ *  (ตอบเหมือนกันเพื่อไม่บอกคนนอกว่าบิล id นี้มีอยู่) */
+function expense_not_found() {
+    layout_head('ไม่พบรายการ', '');
+    echo '<div class="bg-white rounded-2xl p-10 text-center text-slate-400 border border-dashed border-slate-200">ไม่พบรายจ่ายนี้ <a href="index.php" class="text-emerald-600 font-semibold">กลับหน้าหลัก</a></div>';
+    layout_foot();
+    exit;
+}
+
+/* ----- ดึงข้อมูล (ต้องทำก่อน POST เพื่อใช้ตรวจสิทธิ์ + ตรวจค่าที่ส่งมาจากฟอร์ม) ----- */
+$rows = sb_get('expenses?id=eq.' . $id . '&select=*,users(name)');
+$exp  = $rows[0] ?? null;
+if (!$exp) expense_not_found();
+
+$splits   = sb_get('expense_splits?expense_id=eq.' . $id . '&select=*,users(name)&order=amount.desc') ?: [];
+$splitMap = [];
+foreach ($splits as $s) { $splitMap[(int) $s['user_id']] = (float) $s['amount']; }
+
+/* สิทธิ์: ต้องเป็นคนสำรองจ่าย หรือถูกหารในบิลนี้เท่านั้น จึงจะ ดู/แก้/ลบ ได้
+ * (ก่อนหน้านี้ใครล็อกอินก็ยิง id มั่วเพื่อลบบิลของคนอื่นได้) */
+$participants = array_values(array_unique(array_filter(
+    array_merge([(int) $exp['paid_by']], array_keys($splitMap))
+)));
+if ($myMember <= 0 || !in_array($myMember, $participants, true)) expense_not_found();
+
+// ตัวเลือกผู้ร่วมหาร = ตัวเอง + เพื่อน + คนที่อยู่ในบิลนี้อยู่แล้ว (กันตกหล่นตอนแก้ไข)
+$users   = $accountId ? selectable_members($accountId) : [];
+$haveIds = array_map('intval', array_column($users, 'id'));
+foreach (array_keys($splitMap) as $uid) {
+    if (!in_array((int) $uid, $haveIds, true)) {
+        $ur = sb_get('users?id=eq.' . (int) $uid . '&limit=1');
+        if (is_array($ur) && isset($ur[0]['id'])) { $users[] = $ur[0]; $haveIds[] = (int) $ur[0]['id']; }
+    }
+}
 
 /* ----- จัดการ POST: ลบ / แก้ไข ----- */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
     $action = $_POST['action'] ?? '';
 
     if ($action === 'delete') {
@@ -24,14 +62,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $total        = round((float) ($_POST['total_amount'] ?? 0), 2);
         $paid_by      = intval($_POST['paid_by'] ?? 0);
         $mode         = ($_POST['mode'] ?? 'equal') === 'custom' ? 'custom' : 'equal';
-        $picked       = $_POST['split_with'] ?? [];
         $amounts      = $_POST['amount'] ?? [];
         $spent_at_raw = trim($_POST['spent_at'] ?? '');
 
-        if ($title === '' || $total <= 0 || $paid_by <= 0) {
-            $status_msg = 'กรุณากรอกข้อมูลให้ครบถ้วน';
+        // รับเฉพาะ id ที่อยู่ใน dropdown จริง (ตัวเอง + เพื่อน + คนในบิลเดิม)
+        $picked = array_values(array_filter(
+            array_map('intval', (array) ($_POST['split_with'] ?? [])),
+            fn($u) => in_array($u, $haveIds, true)
+        ));
+
+        if ($title === '' || $total <= 0 || !in_array($paid_by, $haveIds, true) || empty($picked)) {
+            $status_msg = 'กรุณากรอกข้อมูลให้ครบถ้วน และเลือกได้เฉพาะตัวเองกับเพื่อนเท่านั้น';
         } else {
-            list($splits, $err) = compute_splits($mode, $total, $picked, $amounts);
+            // ชื่อคนละตัวกับ $splits (แถวจาก DB ที่ใช้ตอน render) เพื่อไม่ให้ทับกันตอน POST ไม่ผ่าน
+            list($newSplits, $err) = compute_splits($mode, $total, $picked, $amounts);
             // รูปใบเสร็จ: ลบ / เปลี่ยนรูปใหม่ / คงเดิม
             $exUpdate = ['title' => $title, 'total_amount' => $total, 'paid_by' => $paid_by];
             $upErr = null;
@@ -51,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 sb_update('expenses?id=eq.' . $id, $exUpdate);
                 sb_delete('expense_splits?expense_id=eq.' . $id);
                 $payload = [];
-                foreach ($splits as $uid => $amt) {
+                foreach ($newSplits as $uid => $amt) {
                     $payload[] = ['expense_id' => $id, 'user_id' => (int) $uid, 'amount' => $amt];
                 }
                 sb_insert('expense_splits', $payload);
@@ -59,31 +103,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             }
         }
-    }
-}
-
-/* ----- ดึงข้อมูล ----- */
-$rows = sb_get('expenses?id=eq.' . $id . '&select=*,users(name)');
-$exp  = $rows[0] ?? null;
-if (!$exp) {
-    layout_head('ไม่พบรายการ', '');
-    echo '<div class="bg-white rounded-2xl p-10 text-center text-slate-400 border border-dashed border-slate-200">ไม่พบรายจ่ายนี้ <a href="index.php" class="text-emerald-600 font-semibold">กลับหน้าหลัก</a></div>';
-    layout_foot();
-    exit;
-}
-
-$splits   = sb_get('expense_splits?expense_id=eq.' . $id . '&select=*,users(name)&order=amount.desc') ?: [];
-$splitMap = [];
-foreach ($splits as $s) { $splitMap[(int) $s['user_id']] = (float) $s['amount']; }
-
-// ตัวเลือกผู้ร่วมหาร = ตัวเอง + เพื่อน + คนที่อยู่ในบิลนี้อยู่แล้ว (กันตกหล่นตอนแก้ไข)
-$accountId = (int) ($_SESSION['user']['account_id'] ?? 0);
-$users     = $accountId ? selectable_members($accountId) : [];
-$haveIds   = array_map('intval', array_column($users, 'id'));
-foreach (array_keys($splitMap) as $uid) {
-    if (!in_array((int) $uid, $haveIds, true)) {
-        $ur = sb_get('users?id=eq.' . (int) $uid . '&limit=1');
-        if (is_array($ur) && isset($ur[0]['id'])) { $users[] = $ur[0]; $haveIds[] = (int) $ur[0]['id']; }
     }
 }
 
@@ -148,6 +167,7 @@ layout_head('รายละเอียดรายจ่าย', '');
             <i data-lucide="pencil" class="w-4 h-4"></i> แก้ไข
         </button>
         <form method="POST" onsubmit="return confirm('ลบรายการ &quot;<?= htmlspecialchars(addslashes($exp['title'])) ?>&quot; ออกถาวร?');" class="flex-1">
+            <?= csrf_field() ?>
             <input type="hidden" name="action" value="delete">
             <button type="submit" class="w-full bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-600 font-semibold py-2.5 rounded-xl transition flex items-center justify-center gap-2">
                 <i data-lucide="trash-2" class="w-4 h-4"></i> ลบรายการ
@@ -158,6 +178,7 @@ layout_head('รายละเอียดรายจ่าย', '');
     <!-- แผงแก้ไข (ซ่อนไว้) -->
     <div id="editPanel" class="hidden mt-5">
         <form method="POST" enctype="multipart/form-data" class="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-5" id="expenseForm">
+            <?= csrf_field() ?>
             <input type="hidden" name="action" value="edit">
             <h3 class="font-bold text-slate-700 flex items-center gap-2"><i data-lucide="pencil" class="w-4 h-4 text-emerald-500"></i> แก้ไขรายการ</h3>
 

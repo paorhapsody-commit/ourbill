@@ -9,18 +9,30 @@ $myMember = (int) ($_SESSION['user']['member_id'] ?? 0);
 
 // เคลียร์หนี้แบบสรุปรวม: ลูกหนี้จ่ายคืน $amount, ส่วนต่างเก็บที่เงินเพื่อน
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reconcile' && $myMember > 0) {
+    csrf_check();
     $amt = isset($_POST['amount']) && $_POST['amount'] !== '' ? (float) $_POST['amount'] : null;
-    reconcile_with_friend($myMember, (int) ($_POST['friend_id'] ?? 0), $amt);
+    $fid = (int) ($_POST['friend_id'] ?? 0);
+    // เคลียร์ได้เฉพาะกับเพื่อนที่ตอบรับแล้วเท่านั้น
+    if (in_array($fid, selectable_member_ids($me), true)) {
+        reconcile_with_friend($myMember, $fid, $amt);
+    }
     header('Location: settle.php?cleared=1');
     exit;
 }
 
 // บันทึกการโอนเงินคืนแบบกำหนดเอง (settlement — มีผลกับยอดบิลเท่านั้น)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'settle') {
+    csrf_check();
     $from = intval($_POST['from_user'] ?? 0);
     $to   = intval($_POST['to_user'] ?? 0);
     $amt  = round((float) ($_POST['amount'] ?? 0), 2);
-    if ($from > 0 && $to > 0 && $from !== $to && $amt > 0) {
+    // เราต้องเป็นคู่ใดคู่หนึ่งเสมอ และอีกฝ่ายต้องเป็นเพื่อนเรา
+    // (ก่อนหน้านี้กรอก id อะไรก็ได้ = สร้างรายการโอนแทนคนอื่นได้)
+    $allowed = selectable_member_ids($me);
+    $iAmParty = ($from === $myMember || $to === $myMember);
+    $other    = ($from === $myMember) ? $to : $from;
+    if ($from > 0 && $to > 0 && $from !== $to && $amt > 0
+        && $myMember > 0 && $iAmParty && in_array($other, $allowed, true)) {
         sb_insert('settlements', [
             'from_user' => $from, 'to_user' => $to, 'amount' => $amt,
             'note' => trim($_POST['note'] ?? '') ?: null,
@@ -32,7 +44,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'settl
 
 $friends = unified_balances($myMember);
 $members = array_values(selectable_members($me)); // me + friends (สำหรับฟอร์มกำหนดเอง)
-$history = sb_get('settlements?select=*,from:from_user(name),to:to_user(name)&order=created_at.desc&limit=100') ?: [];
+// ประวัติเฉพาะรายการที่เราเกี่ยวข้อง (เดิมดึงของทั้งระบบ = เห็นยอดโอนของคนอื่น)
+$history = $myMember > 0 ? sb_rows(sb_get(
+    'settlements?select=*,from:from_user(name),to:to_user(name)'
+    . '&or=(from_user.eq.' . $myMember . ',to_user.eq.' . $myMember . ')'
+    . '&order=created_at.desc&limit=100'
+)) : [];
 
 // คัดเฉพาะเพื่อนที่ยังมียอดสุทธิรวมค้าง (รวมทุกฟังก์ชัน)
 $pending = [];
@@ -101,6 +118,7 @@ layout_head('เคลียร์หนี้', 'settle.php');
                 </a>
                 <form method="POST" class="js-reconcile-form sm:w-auto"
                       data-name="<?= htmlspecialchars($f['name'], ENT_QUOTES) ?>" data-net="<?= $net ?>" data-fid="<?= $f['id'] ?>">
+                    <?= csrf_field() ?>
                     <input type="hidden" name="action" value="reconcile">
                     <input type="hidden" name="friend_id" value="<?= $f['id'] ?>">
                     <button type="submit"
@@ -121,6 +139,7 @@ layout_head('เคลียร์หนี้', 'settle.php');
         <i data-lucide="chevron-down" class="w-4 h-4 ml-auto text-slate-400 group-open:rotate-180 transition"></i>
     </summary>
     <form method="POST" class="p-4 pt-0 grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+        <?= csrf_field() ?>
         <input type="hidden" name="action" value="settle">
         <div>
             <label class="block text-xs font-semibold text-slate-500 mb-1">คนจ่าย</label>

@@ -9,6 +9,8 @@ if (!is_logged_in()) {
     exit;
 }
 
+csrf_check();
+
 $theme = $_POST['theme'] ?? '';
 if (!save_user_theme($theme)) {
     http_response_code(400);

@@ -14,6 +14,7 @@ function fs_row($id) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $me > 0) {
+    csrf_check();
     $action = $_POST['action'] ?? '';
 
     if ($action === 'invite') {
@@ -110,11 +111,11 @@ function acc_avatar($acc, $size = 'w-11 h-11') {
                     <p class="text-xs text-slate-400 truncate"><?= htmlspecialchars($a['email']) ?></p>
                 </div>
                 <form method="POST" class="inline">
-                    <input type="hidden" name="action" value="accept"><input type="hidden" name="fid" value="<?= $it['fid'] ?>">
+                    <?= csrf_field() ?><input type="hidden" name="action" value="accept"><input type="hidden" name="fid" value="<?= $it['fid'] ?>">
                     <button class="text-xs font-semibold px-3 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white flex items-center gap-1"><i data-lucide="check" class="w-3.5 h-3.5"></i> ตอบรับ</button>
                 </form>
                 <form method="POST" class="inline">
-                    <input type="hidden" name="action" value="decline"><input type="hidden" name="fid" value="<?= $it['fid'] ?>">
+                    <?= csrf_field() ?><input type="hidden" name="action" value="decline"><input type="hidden" name="fid" value="<?= $it['fid'] ?>">
                     <button class="text-xs font-semibold px-3 py-2 rounded-lg bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
                 </form>
             </div>
@@ -139,7 +140,7 @@ function acc_avatar($acc, $size = 'w-11 h-11') {
             </div>
             <span class="text-xs bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-full font-medium flex items-center gap-1"><i data-lucide="heart-handshake" class="w-3.5 h-3.5"></i> เพื่อน</span>
             <form method="POST" onsubmit="return confirm('ยกเลิกเพื่อนกับ <?= htmlspecialchars(addslashes($a['name'] ?: $a['email'])) ?> ?');">
-                <input type="hidden" name="action" value="unfriend"><input type="hidden" name="fid" value="<?= $it['fid'] ?>">
+                <?= csrf_field() ?><input type="hidden" name="action" value="unfriend"><input type="hidden" name="fid" value="<?= $it['fid'] ?>">
                 <button class="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition"><i data-lucide="user-minus" class="w-4 h-4"></i></button>
             </form>
         </div>
@@ -160,7 +161,7 @@ function acc_avatar($acc, $size = 'w-11 h-11') {
                     <p class="text-xs text-amber-500">รอตอบรับ...</p>
                 </div>
                 <form method="POST">
-                    <input type="hidden" name="action" value="cancel"><input type="hidden" name="fid" value="<?= $it['fid'] ?>">
+                    <?= csrf_field() ?><input type="hidden" name="action" value="cancel"><input type="hidden" name="fid" value="<?= $it['fid'] ?>">
                     <button class="text-xs font-medium px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500">ยกเลิก</button>
                 </form>
             </div>
@@ -195,7 +196,7 @@ function acc_avatar($acc, $size = 'w-11 h-11') {
                 ? `<button type="submit" class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white flex items-center gap-1"><i data-lucide="user-plus" class="w-3.5 h-3.5"></i> เพิ่ม</button>`
                 : (relLabel[it.rel] || '');
             const formOpen = it.rel === 'none'
-                ? `<form method="POST"><input type="hidden" name="action" value="request"><input type="hidden" name="target_account" value="${it.id}">`
+                ? `<form method="POST"><?= csrf_field() ?><input type="hidden" name="action" value="request"><input type="hidden" name="target_account" value="${it.id}">`
                 : `<div>`;
             const formClose = it.rel === 'none' ? `</form>` : `</div>`;
             return `<div class="flex items-center gap-3 p-3 border-b border-slate-50 last:border-0 hover:bg-slate-50">
@@ -239,7 +240,7 @@ function acc_avatar($acc, $size = 'w-11 h-11') {
     <?php endif; ?>
 
     <form method="POST">
-        <input type="hidden" name="action" value="invite">
+        <?= csrf_field() ?><input type="hidden" name="action" value="invite">
         <button type="submit"
                 class="w-full flex items-center justify-center gap-2 bg-gradient-to-br from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white font-bold py-2.5 rounded-xl shadow-md shadow-emerald-100 transition text-sm">
             <i data-lucide="link" class="w-4 h-4"></i> สร้างลิงก์เชิญใหม่

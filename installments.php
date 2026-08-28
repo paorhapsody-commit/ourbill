@@ -18,6 +18,7 @@ function held_by_owner($myMember) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $myMember > 0) {
+    csrf_check();
     $action = $_POST['action'] ?? '';
 
     if ($action === 'create') {
@@ -26,7 +27,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $myMember > 0) {
         $monthly = round((float) ($_POST['monthly_amount'] ?? 0), 2);
         $months  = (int) ($_POST['months'] ?? 0);
         $start   = trim($_POST['start_date'] ?? '');
-        if ($payer > 0 && $payer !== $myMember && $title !== '' && $monthly > 0 && $months > 0) {
+        // ผู้ผ่อนต้องเป็นเพื่อนที่ตอบรับแล้วเท่านั้น
+        if ($payer > 0 && $payer !== $myMember && $title !== '' && $monthly > 0 && $months > 0
+            && in_array($payer, selectable_member_ids($me), true)) {
             sb_insert('installments', [
                 'payer_id' => $payer, 'payee_id' => $myMember,
                 'title' => $title, 'monthly_amount' => $monthly, 'months' => $months,
@@ -157,6 +160,7 @@ layout_head('ผ่อนรายเดือน', 'holdings.php');
         <p class="px-4 pb-4 text-sm text-slate-400">ยังไม่มีเพื่อน — <a href="friends.php" class="text-emerald-600 font-semibold">เพิ่มเพื่อนก่อน</a></p>
     <?php else: ?>
     <form method="POST" class="p-4 pt-0 space-y-3">
+        <?= csrf_field() ?>
         <input type="hidden" name="action" value="create">
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -217,7 +221,7 @@ layout_head('ผ่อนรายเดือน', 'holdings.php');
             </div>
             <?php if ($done): ?><span class="text-xs bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-full font-medium flex items-center gap-1"><i data-lucide="check" class="w-3.5 h-3.5"></i> ครบแล้ว</span><?php endif; ?>
             <form method="POST" onsubmit="return confirm('ลบแผนผ่อน &quot;<?= htmlspecialchars(addslashes($p['title'])) ?>&quot; ?');">
-                <input type="hidden" name="action" value="delete"><input type="hidden" name="installment_id" value="<?= $p['id'] ?>">
+                <?= csrf_field() ?><input type="hidden" name="action" value="delete"><input type="hidden" name="installment_id" value="<?= $p['id'] ?>">
                 <button class="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
             </form>
         </div>
@@ -234,7 +238,7 @@ layout_head('ผ่อนรายเดือน', 'holdings.php');
         <?php if (!$done): ?>
         <!-- ฟอร์มจ่ายงวด -->
         <form method="POST" class="bg-slate-50 rounded-xl p-3 grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-end">
-            <input type="hidden" name="action" value="pay"><input type="hidden" name="installment_id" value="<?= $p['id'] ?>">
+            <?= csrf_field() ?><input type="hidden" name="action" value="pay"><input type="hidden" name="installment_id" value="<?= $p['id'] ?>">
             <div class="grid grid-cols-2 gap-2">
                 <div>
                     <label class="block text-[11px] font-semibold text-slate-500 mb-1">จำนวน (฿)</label>

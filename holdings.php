@@ -8,11 +8,14 @@ $me       = (int) ($_SESSION['user']['account_id'] ?? 0);
 $myMember = (int) ($_SESSION['user']['member_id'] ?? 0);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $myMember > 0) {
+    csrf_check();
     if (($_POST['action'] ?? '') === 'add') {
         $owner = (int) ($_POST['owner_id'] ?? 0);
         $amt   = round((float) ($_POST['amount'] ?? 0), 2);
         $dir   = ($_POST['direction'] ?? 'in') === 'out' ? 'out' : 'in';
-        if ($owner > 0 && $owner !== $myMember && $amt > 0) {
+        // เจ้าของเงินต้องเป็นเพื่อนที่ตอบรับแล้วเท่านั้น (เดิมยิง member id อะไรก็ได้)
+        if ($owner > 0 && $owner !== $myMember && $amt > 0
+            && in_array($owner, selectable_member_ids($me), true)) {
             sb_insert('holdings', [
                 'holder_id' => $myMember,
                 'owner_id'  => $owner,
@@ -115,6 +118,7 @@ $shownMine = array_filter($frHold, fn($v) => abs($v['net']) > 0.009);
 
 <!-- ฟอร์มเพิ่ม -->
 <form method="POST" class="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mb-6 space-y-4">
+    <?= csrf_field() ?>
     <input type="hidden" name="action" value="add">
     <h2 class="font-bold text-slate-700 flex items-center gap-2 text-sm"><i data-lucide="plus-circle" class="w-4 h-4 text-emerald-500"></i> บันทึกเงิน</h2>
 

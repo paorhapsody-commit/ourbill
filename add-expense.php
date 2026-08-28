@@ -11,18 +11,23 @@ $status_msg = '';
 $status_ok  = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
     $title       = trim($_POST['title'] ?? '');
     $total       = round((float) ($_POST['total_amount'] ?? 0), 2);
     $paid_by     = intval($_POST['paid_by'] ?? 0);
     $mode        = ($_POST['mode'] ?? 'equal') === 'custom' ? 'custom' : 'equal';
-    $picked      = $_POST['split_with'] ?? [];          // ids ที่ติ๊กร่วมหาร
     $amounts     = $_POST['amount'] ?? [];               // amount[uid] (โหมด custom)
     $spent_at_raw = trim($_POST['spent_at'] ?? '');
 
-    $picked = array_values(array_filter(array_map('intval', $picked)));
+    // รับเฉพาะ id ที่อยู่ในรายชื่อที่เลือกได้จริง (ตัวเอง + เพื่อนที่ตอบรับแล้ว)
+    $allowedIds = array_map('intval', array_column($users, 'id'));
+    $picked = array_values(array_filter(
+        array_map('intval', (array) ($_POST['split_with'] ?? [])),
+        fn($u) => in_array($u, $allowedIds, true)
+    ));
 
-    if ($title === '' || $total <= 0 || empty($picked) || $paid_by <= 0) {
-        $status_msg = 'กรุณากรอกชื่อรายการ ยอดเงิน และเลือกผู้ร่วมหารอย่างน้อย 1 คน';
+    if ($title === '' || $total <= 0 || empty($picked) || !in_array($paid_by, $allowedIds, true)) {
+        $status_msg = 'กรุณากรอกชื่อรายการ ยอดเงิน และเลือกผู้ร่วมหารอย่างน้อย 1 คน (เฉพาะตัวเองกับเพื่อน)';
     } else {
         list($splits, $err)        = compute_splits($mode, $total, $picked, $amounts);
         list($receiptUrl, $upErr)  = $err ? [null, null] : handle_receipt_upload('receipt');
@@ -80,6 +85,7 @@ layout_head('เพิ่มรายจ่าย', 'add-expense.php');
         <?php endif; ?>
 
     <form method="POST" enctype="multipart/form-data" class="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-5" id="expenseForm">
+        <?= csrf_field() ?>
         <!-- ชื่อรายการ -->
         <div>
             <label class="block text-sm font-semibold text-slate-600 mb-1.5">ค่าอะไร?</label>

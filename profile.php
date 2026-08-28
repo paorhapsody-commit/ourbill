@@ -14,6 +14,7 @@ $accountId = (int) ($cu['account_id'] ?? 0);
 $status_msg = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
     $name   = trim($_POST['name'] ?? '');
     $remove = ($_POST['remove_picture'] ?? '') === '1';
 
@@ -54,6 +55,7 @@ layout_head('โปรไฟล์', '');
     <?php endif; ?>
 
     <form method="POST" enctype="multipart/form-data" class="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-6">
+        <?= csrf_field() ?>
         <!-- รูปโปรไฟล์ -->
         <div class="flex flex-col items-center gap-2">
             <input type="file" name="picture" id="picture" accept="image/*" class="hidden">

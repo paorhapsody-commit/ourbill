@@ -7,7 +7,40 @@ require_once __DIR__ . '/auth_config.php';
 require_once __DIR__ . '/config.php';
 
 if (session_status() === PHP_SESSION_NONE) {
+    /* cookie ของ session: กัน JS อ่าน (httponly) · กันส่งข้ามเว็บ (samesite)
+     * · บังคับ https เมื่ออยู่หลัง SSL — Render ตัด TLS ที่ proxy จึงต้องดู X-Forwarded-Proto ด้วย */
+    $https = (!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off')
+          || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    session_set_cookie_params([
+        'httponly' => true,
+        'samesite' => 'Lax',
+        'secure'   => $https,
+    ]);
     session_start();
+}
+
+/* =========================================================
+ *  CSRF — ทุกฟอร์ม POST ต้องแนบ csrf_field() และทุก handler ต้องเรียก csrf_check()
+ * ========================================================= */
+
+/** token ประจำ session (สร้างครั้งเดียวแล้วใช้ซ้ำทั้ง session) */
+function csrf_token() {
+    if (empty($_SESSION['csrf'])) $_SESSION['csrf'] = bin2hex(random_bytes(32));
+    return $_SESSION['csrf'];
+}
+
+/** hidden input สำหรับแปะในฟอร์ม POST */
+function csrf_field() {
+    return '<input type="hidden" name="_csrf" value="' . htmlspecialchars(csrf_token(), ENT_QUOTES) . '">';
+}
+
+/** ตรวจ token ก่อนแตะข้อมูล — ไม่ผ่าน = ตัดจบ 403 (fail closed) */
+function csrf_check() {
+    $sent = $_POST['_csrf'] ?? '';
+    if (!is_string($sent) || $sent === '' || !hash_equals(csrf_token(), $sent)) {
+        http_response_code(403);
+        exit('คำขอไม่ถูกต้อง (CSRF) — กรุณารีเฟรชหน้าแล้วลองใหม่');
+    }
 }
 
 /* ---------- ผู้ใช้ทั่วไป (Google) ---------- */
@@ -246,6 +279,11 @@ function selectable_members($accountId) {
     if (empty($ids)) return [];
     $rows = sb_get('users?account_id=in.(' . implode(',', $ids) . ')&order=name.asc');
     return sb_rows($rows);
+}
+
+/** id ของ users ที่เลือกหารบิลได้ (ใช้ตรวจค่าที่ส่งมาจากฟอร์ม ไม่ให้ยิง id มั่ว) */
+function selectable_member_ids($accountId) {
+    return array_map('intval', array_column(selectable_members($accountId), 'id'));
 }
 
 /* =========================================================

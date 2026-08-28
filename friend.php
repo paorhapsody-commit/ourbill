@@ -86,6 +86,7 @@ layout_head($friendName, 'friends.php');
 <?php if (abs($net) > 0.009): $friendOwesMe = $net > 0; ?>
 <form method="POST" action="settle.php" class="js-reconcile-form mb-3"
       data-name="<?= htmlspecialchars($friendName, ENT_QUOTES) ?>" data-net="<?= round($net, 2) ?>" data-fid="<?= $fid ?>">
+    <?= csrf_field() ?>
     <input type="hidden" name="action" value="reconcile">
     <input type="hidden" name="friend_id" value="<?= $fid ?>">
     <button type="submit" class="w-full bg-gradient-to-br from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white font-bold text-sm py-3 rounded-xl shadow-md shadow-emerald-200 transition flex items-center justify-center gap-2">

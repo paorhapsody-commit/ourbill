@@ -125,6 +125,9 @@ layout_head('หน้าหลัก', 'index.php');
     let selected = today;
 
     function fmt(n){ return Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+    // ชื่อบิล/โน้ต มาจากที่ผู้ใช้พิมพ์ — ต้อง escape ก่อนต่อเป็น HTML
+    function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
     function pad(n){ return (n<10?'0':'')+n; }
     function key(y,m,d){ return y+'-'+pad(m+1)+'-'+pad(d); }
 
@@ -141,8 +144,8 @@ layout_head('หน้าหลัก', 'index.php');
                 const amt = e.sign ? (e.sign+fmt(e.amount)) : fmt(e.amount);
                 return '<div class="flex items-center gap-2.5 p-2 rounded-xl bg-slate-50">'
                   + '<span class="grid place-items-center w-8 h-8 rounded-lg bg-white text-emerald-500 shrink-0"><i data-lucide="'+(ICON[e.icon]||'circle')+'" class="w-4 h-4"></i></span>'
-                  + '<div class="min-w-0 flex-1"><p class="text-sm font-semibold text-slate-700 truncate">'+e.title+'</p>'
-                  + (e.sub ? '<p class="text-xs text-slate-400 truncate">'+e.sub+'</p>' : '') + '</div>'
+                  + '<div class="min-w-0 flex-1"><p class="text-sm font-semibold text-slate-700 truncate">'+esc(e.title)+'</p>'
+                  + (e.sub ? '<p class="text-xs text-slate-400 truncate">'+esc(e.sub)+'</p>' : '') + '</div>'
                   + '<span class="text-sm font-bold '+color+' shrink-0">'+amt+' ฿</span></div>';
             }).join('') + '</div>';
         }

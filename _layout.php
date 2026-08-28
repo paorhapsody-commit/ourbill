@@ -39,6 +39,8 @@ function layout_head($title, $active = '') {
         };
         // ธีมที่บันทึกไว้ในบัญชี (server เป็นตัวตัดสิน) — ว่าง = ยังไม่ตั้ง ค่อย fallback ไป localStorage
         window.OB_SAVED_THEME = <?= json_encode($savedTheme, JSON_UNESCAPED_UNICODE) ?>;
+        // token สำหรับ fetch POST (set-theme.php)
+        window.OB_CSRF = <?= json_encode(csrf_token()) ?>;
         (function () {
             var t = window.OB_SAVED_THEME || localStorage.getItem('ob-theme') || 'green';
             window.OB_applyTheme(t);          // ใช้ทันที กันสีกระพริบก่อนวาดหน้า
@@ -232,7 +234,7 @@ function layout_foot() {
             fetch('set-theme.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: 'theme=' + encodeURIComponent(name)
+                body: 'theme=' + encodeURIComponent(name) + '&_csrf=' + encodeURIComponent(window.OB_CSRF || '')
             }).catch(function () {});
         }
         function renderSwatches() {
@@ -360,6 +362,9 @@ function reconcile_modal($itemsByFriend = []) {
     const $ = function (id) { return document.getElementById(id); };
     let pending = null, curNet = 0;
     function fmt(n){ return Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+    // ชื่อบิล/โน้ต มาจากที่ผู้ใช้พิมพ์ — ต้อง escape ก่อนต่อเป็น HTML ไม่งั้นเพื่อนตั้งชื่อบิลเป็นสคริปต์ได้
+    function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
     function dateTH(ts){ if(!ts) return ''; const p=String(ts).slice(0,10).split('-'); return p.length===3 ? (parseInt(p[2])+'/'+p[1]+'/'+p[0].slice(2)) : ''; }
 
     function updateResidual(){
@@ -384,8 +389,8 @@ function reconcile_modal($itemsByFriend = []) {
             const pos = (it.impact || 0) >= 0;
             return '<div class="flex items-center gap-2.5">'
               + '<span class="grid place-items-center w-8 h-8 rounded-lg bg-slate-50 text-emerald-500 shrink-0"><i data-lucide="' + (ICON[it.icon] || 'circle') + '" class="w-4 h-4"></i></span>'
-              + '<div class="min-w-0 flex-1"><p class="text-sm text-slate-700 truncate">' + (it.title || '') + '</p>'
-              + '<p class="text-[11px] text-slate-400">' + (it.sub ? it.sub + ' · ' : '') + dateTH(it.ts) + '</p></div>'
+              + '<div class="min-w-0 flex-1"><p class="text-sm text-slate-700 truncate">' + esc(it.title) + '</p>'
+              + '<p class="text-[11px] text-slate-400">' + (it.sub ? esc(it.sub) + ' · ' : '') + dateTH(it.ts) + '</p></div>'
               + '<span class="text-sm font-semibold shrink-0 ' + (pos ? 'text-emerald-600' : 'text-rose-500') + '">' + (pos ? '+' : '−') + fmt(Math.abs(it.impact || 0)) + '</span></div>';
         }).join('') : '<p class="text-slate-400 text-sm text-center py-2">— ไม่มีรายการย่อย —</p>';
         $('rcAmount').value = fmt(Math.abs(curNet));

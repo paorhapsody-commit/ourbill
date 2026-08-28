@@ -26,6 +26,7 @@ function finish_write($res) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
     $action = $_POST['action'] ?? '';
 
     if ($action === 'save_settings') {
@@ -74,6 +75,7 @@ $badge = [
 function acct_btn($id, $status, $label, $cls, $icon, $confirm = '') {
     $onsubmit = $confirm ? ' onsubmit="return confirm(\'' . htmlspecialchars($confirm, ENT_QUOTES) . '\')"' : '';
     echo '<form method="POST" class="inline"' . $onsubmit . '>'
+        . csrf_field()
         . '<input type="hidden" name="action" value="account">'
         . '<input type="hidden" name="account_id" value="' . $id . '">'
         . '<input type="hidden" name="new_status" value="' . $status . '">'
@@ -197,6 +199,7 @@ function acct_btn($id, $status, $label, $cls, $icon, $confirm = '') {
         </div>
 
         <form method="POST" class="space-y-6">
+            <?= csrf_field() ?>
             <input type="hidden" name="action" value="save_settings">
 
             <!-- ทั่วไป -->
